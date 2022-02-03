@@ -2322,6 +2322,7 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 		ctx.connID = connID
 		ctx.connRequestNum = connRequestNum
 		ctx.time = time.Now()
+		ctx.connTime = connTime
 
 		// If a client denies a request the handler should not be called
 		if continueReadingRequest {
