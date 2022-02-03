@@ -588,9 +588,18 @@ type RequestCtx struct {
 
 	connID         uint64
 	connRequestNum uint64
-	connTime       time.Time
 	remoteAddr     net.Addr
 
+	// Connection open time
+	connTime time.Time
+
+	// Read Duration from the connection
+	readDuration time.Duration
+
+	// Idle Duration of the connection
+	idleDuration time.Duration
+
+	// Start time of handling request
 	time time.Time
 
 	logger ctxLogger
@@ -786,6 +795,8 @@ func (ctx *RequestCtx) reset() {
 	ctx.connID = 0
 	ctx.connRequestNum = 0
 	ctx.connTime = zeroTime
+	ctx.readDuration = 0
+	ctx.idleDuration = 0
 	ctx.remoteAddr = nil
 	ctx.time = zeroTime
 	ctx.s = nil
@@ -883,6 +894,16 @@ func (ctx *RequestCtx) Time() time.Time {
 // the current request came from.
 func (ctx *RequestCtx) ConnTime() time.Time {
 	return ctx.connTime
+}
+
+// ReadDuration returns the READ time of the current request
+func (ctx *RequestCtx) ReadDuration() time.Duration {
+	return ctx.readDuration
+}
+
+// IdleDuration returns the connection IDLE time between two requests
+func (ctx *RequestCtx) IdleDuration() time.Duration {
+	return ctx.idleDuration
 }
 
 // ConnRequestNum returns request sequence number
@@ -2117,12 +2138,18 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 		isHTTP11        bool
 
 		continueReadingRequest bool = true
+
+		startTime time.Time
+		fbrTime   time.Time
 	)
 	for {
+		startTime = time.Now()
+
 		connRequestNum++
 
 		// If this is a keep-alive connection set the idle timeout.
 		if connRequestNum > 1 {
+
 			if d := s.idleTimeout(); d > 0 {
 				if err := c.SetReadDeadline(time.Now().Add(d)); err != nil {
 					panic(fmt.Sprintf("BUG: error in SetReadDeadline(%s): %s", d, err))
@@ -2153,6 +2180,8 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 			// a couple of bytes already so the idle timeout will already be used.
 			br, err = acquireByteReader(&ctx)
 		}
+
+		fbrTime = time.Now()
 
 		ctx.Request.isTLS = isTLS
 		ctx.Response.Header.noDefaultContentType = s.NoDefaultContentType
@@ -2323,6 +2352,13 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 		ctx.connRequestNum = connRequestNum
 		ctx.time = time.Now()
 		ctx.connTime = connTime
+
+		if 1 == ctx.connRequestNum {
+			ctx.readDuration = ctx.time.Sub(connTime)
+		} else {
+			ctx.readDuration = ctx.time.Sub(fbrTime)
+			ctx.idleDuration = startTime.Sub(fbrTime)
+		}
 
 		// If a client denies a request the handler should not be called
 		if continueReadingRequest {
