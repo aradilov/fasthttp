@@ -22,7 +22,7 @@ var errNoCertOrKeyProvided = errors.New("cert or key has not provided")
 var (
 	// ErrAlreadyServing is returned when calling Serve on a Server
 	// that is already serving connections.
-	ErrAlreadyServing = errors.New("Server is already serving connections")
+	ErrAlreadyServing = errors.New("server is already serving connections")
 )
 
 // ServeConn serves HTTP requests from the given connection
@@ -388,7 +388,15 @@ type Server struct {
 	// ConnState specifies an optional callback function that is
 	// called when a client connection changes state. See the
 	// ConnState type and associated constants for details.
-	ConnState func(net.Conn, ConnState)
+	ConnState func(conn net.Conn, state ConnState)
+
+	// ConnReject specifies an optional callback function that is
+	// called when a client connection cannot be established.
+	ConnReject func(addr net.Addr, err error)
+
+	// ConnClose specifies an optional callback function that is
+	// called when a client connection is going to change the state to Close.
+	ConnClose func(conn net.Conn, id, requests uint64, reason error)
 
 	// Logger, which is used by RequestCtx.Logger().
 	//
@@ -1832,6 +1840,7 @@ func (s *Server) Serve(ln net.Listener) error {
 
 	for {
 		if c, err = acceptConn(s, ln, &lastPerIPErrorTime); err != nil {
+			s.setReject(ln.Addr(), err)
 			wp.Stop()
 			if err == io.EOF {
 				return nil
@@ -1844,6 +1853,7 @@ func (s *Server) Serve(ln net.Listener) error {
 			atomic.AddInt32(&s.open, -1)
 			s.writeFastError(c, StatusServiceUnavailable,
 				"The connection cannot be served because Server.Concurrency limit exceeded")
+			s.setReject(c.RemoteAddr(), ErrConcurrencyLimit)
 			c.Close()
 			s.setState(c, StateClosed)
 			if time.Since(lastOverflowErrorTime) > time.Minute {
@@ -2221,6 +2231,7 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 				if err == errNeedMore {
 					err = bw.Flush()
 					if err != nil {
+						s.setCloseReason(c, connID, connRequestNum, ConnWriteError{err})
 						break
 					}
 
@@ -2266,9 +2277,12 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 		}
 
 		if err != nil {
+			s.setCloseReason(c, connID, connRequestNum, ConnReadError{err})
+
 			if err == io.EOF {
 				err = nil
 			} else if nr, ok := err.(ErrNothingRead); ok {
+
 				if connRequestNum > 1 {
 					// This is not the first request and we haven't read a single byte
 					// of a new request yet. This means it's just a keep-alive connection
@@ -2310,10 +2324,12 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 				// Send 'HTTP/1.1 100 Continue' response.
 				_, err = bw.Write(strResponseContinue)
 				if err != nil {
+					s.setCloseReason(c, connID, connRequestNum, ConnWriteError{err})
 					break
 				}
 				err = bw.Flush()
 				if err != nil {
+					s.setCloseReason(c, connID, connRequestNum, ConnWriteError{err})
 					break
 				}
 				if s.ReduceMemoryUsage {
@@ -2336,6 +2352,7 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 					br = nil
 				}
 				if err != nil {
+					s.setCloseReason(c, connID, connRequestNum, ConnReadError{err})
 					bw = s.writeErrorResponse(bw, ctx, serverName, err)
 					break
 				}
@@ -2428,10 +2445,17 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 			if br == nil || br.Buffered() == 0 || connectionClose {
 				err = bw.Flush()
 				if err != nil {
+					s.setCloseReason(c, connID, connRequestNum, ConnWriteError{err})
 					break
 				}
 			}
 			if connectionClose {
+				if ctx.Response.ConnectionClose() || s.CloseOnShutdown && atomic.LoadInt32(&s.stop) == 1 {
+					s.setCloseReason(c, connID, connRequestNum, ConnResetServer)
+				} else {
+					s.setCloseReason(c, connID, connRequestNum, ConnResetClient)
+				}
+
 				break
 			}
 			if s.ReduceMemoryUsage && hijackHandler == nil {
@@ -2475,6 +2499,7 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 		ctx.Response.Reset()
 
 		if atomic.LoadInt32(&s.stop) == 1 {
+			s.setCloseReason(c, connID, connRequestNum, nil)
 			err = nil
 			break
 		}
@@ -2491,6 +2516,18 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 	}
 
 	return
+}
+
+func (s *Server) setCloseReason(conn net.Conn, id, requests uint64, reason error) {
+	if hook := s.ConnClose; hook != nil {
+		hook(conn, id, requests, reason)
+	}
+}
+
+func (s *Server) setReject(addr net.Addr, err error) {
+	if hook := s.ConnReject; hook != nil {
+		hook(addr, err)
+	}
 }
 
 func (s *Server) setState(nc net.Conn, state ConnState) {
@@ -2891,6 +2928,19 @@ func (s *Server) closeIdleConns() {
 	s.idleConns = nil
 	s.idleConnsMu.Unlock()
 }
+
+type ConnReadError struct {
+	error
+}
+
+type ConnWriteError struct {
+	error
+}
+
+var (
+	ConnResetClient = errors.New("conn closed by client")
+	ConnResetServer = errors.New("conn closed by server")
+)
 
 // A ConnState represents the state of a client connection to a server.
 // It's used by the optional Server.ConnState hook.
