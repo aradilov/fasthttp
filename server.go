@@ -395,8 +395,12 @@ type Server struct {
 	ConnReject func(addr net.Addr, err error)
 
 	// ConnClose specifies an optional callback function that is
-	// called when a client connection is going to change the state to Close.
-	ConnClose func(conn net.Conn, id, requests uint64, reason error)
+	// called when a client connection is marked for Close.
+	ConnClose func(conn net.Conn, id, requests uint64, created time.Time, reason error)
+
+	// ConnIDLE specifies an optional callback function that is
+	// called for keep-alive connections when a client connection is putting to pool.
+	ConnIDLE func(conn net.Conn, id, requests uint64, idle, read, write time.Duration)
 
 	// Logger, which is used by RequestCtx.Logger().
 	//
@@ -2151,6 +2155,10 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 
 		startTime time.Time
 		fbrTime   time.Time
+
+		readDuration  time.Duration
+		writeDuration time.Duration
+		idleDuration  time.Duration
 	)
 	for {
 		startTime = time.Now()
@@ -2231,7 +2239,7 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 				if err == errNeedMore {
 					err = bw.Flush()
 					if err != nil {
-						s.setCloseReason(c, connID, connRequestNum, ConnWriteError{err})
+						s.setCloseReason(c, connID, connRequestNum, connTime, ConnWriteError{err})
 						break
 					}
 
@@ -2277,7 +2285,7 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 		}
 
 		if err != nil {
-			s.setCloseReason(c, connID, connRequestNum, ConnReadError{err})
+			s.setCloseReason(c, connID, connRequestNum, connTime, ConnReadError{err})
 
 			if err == io.EOF {
 				err = nil
@@ -2324,12 +2332,12 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 				// Send 'HTTP/1.1 100 Continue' response.
 				_, err = bw.Write(strResponseContinue)
 				if err != nil {
-					s.setCloseReason(c, connID, connRequestNum, ConnWriteError{err})
+					s.setCloseReason(c, connID, connRequestNum, connTime, ConnWriteError{err})
 					break
 				}
 				err = bw.Flush()
 				if err != nil {
-					s.setCloseReason(c, connID, connRequestNum, ConnWriteError{err})
+					s.setCloseReason(c, connID, connRequestNum, connTime, ConnWriteError{err})
 					break
 				}
 				if s.ReduceMemoryUsage {
@@ -2352,7 +2360,7 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 					br = nil
 				}
 				if err != nil {
-					s.setCloseReason(c, connID, connRequestNum, ConnReadError{err})
+					s.setCloseReason(c, connID, connRequestNum, connTime, ConnReadError{err})
 					bw = s.writeErrorResponse(bw, ctx, serverName, err)
 					break
 				}
@@ -2371,16 +2379,21 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 		ctx.connTime = connTime
 
 		if 1 == ctx.connRequestNum {
-			ctx.readDuration = ctx.time.Sub(connTime)
+			readDuration = ctx.time.Sub(connTime)
 		} else {
-			ctx.readDuration = ctx.time.Sub(fbrTime)
-			ctx.idleDuration = startTime.Sub(fbrTime)
+			readDuration = ctx.time.Sub(fbrTime)
+			idleDuration = startTime.Sub(fbrTime)
 		}
+
+		ctx.readDuration = readDuration
+		ctx.idleDuration = idleDuration
 
 		// If a client denies a request the handler should not be called
 		if continueReadingRequest {
 			s.Handler(ctx)
 		}
+
+		startTime = time.Now()
 
 		timeoutResponse = ctx.timeoutResponse
 		if timeoutResponse != nil {
@@ -2445,15 +2458,15 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 			if br == nil || br.Buffered() == 0 || connectionClose {
 				err = bw.Flush()
 				if err != nil {
-					s.setCloseReason(c, connID, connRequestNum, ConnWriteError{err})
+					s.setCloseReason(c, connID, connRequestNum, connTime, ConnWriteError{err})
 					break
 				}
 			}
 			if connectionClose {
 				if ctx.Response.ConnectionClose() || s.CloseOnShutdown && atomic.LoadInt32(&s.stop) == 1 {
-					s.setCloseReason(c, connID, connRequestNum, ConnResetServer)
+					s.setCloseReason(c, connID, connRequestNum, connTime, ConnResetServer)
 				} else {
-					s.setCloseReason(c, connID, connRequestNum, ConnResetClient)
+					s.setCloseReason(c, connID, connRequestNum, connTime, ConnResetClient)
 				}
 
 				break
@@ -2493,13 +2506,15 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 			}
 		}
 
-		s.setState(c, StateIdle)
+		writeDuration = time.Now().Sub(startTime)
+		s.setIDLE(c, connID, connRequestNum, idleDuration, readDuration, writeDuration)
+
 		ctx.userValues.Reset()
 		ctx.Request.Reset()
 		ctx.Response.Reset()
 
 		if atomic.LoadInt32(&s.stop) == 1 {
-			s.setCloseReason(c, connID, connRequestNum, nil)
+			s.setCloseReason(c, connID, connRequestNum, connTime, nil)
 			err = nil
 			break
 		}
@@ -2518,9 +2533,17 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 	return
 }
 
-func (s *Server) setCloseReason(conn net.Conn, id, requests uint64, reason error) {
+func (s *Server) setIDLE(conn net.Conn, id, requests uint64, idle, read, write time.Duration) {
+	s.setState(conn, StateIdle)
+
+	if hook := s.ConnIDLE; hook != nil {
+		hook(conn, id, requests, idle, read, write)
+	}
+}
+
+func (s *Server) setCloseReason(conn net.Conn, id, requests uint64, created time.Time, reason error) {
 	if hook := s.ConnClose; hook != nil {
-		hook(conn, id, requests, reason)
+		hook(conn, id, requests, created, reason)
 	}
 }
 
