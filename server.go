@@ -2173,6 +2173,12 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 					panic(fmt.Sprintf("BUG: error in SetReadDeadline(%s): %s", d, err))
 				}
 			}
+		} else {
+			if s.ReadTimeout > 0 {
+				if err := c.SetReadDeadline(time.Now().Add(s.ReadTimeout)); err != nil {
+					panic(fmt.Sprintf("BUG: error in SetReadDeadline(%s): %s", s.ReadTimeout, err))
+				}
+			}
 		}
 
 		if !s.ReduceMemoryUsage || br != nil {
