@@ -54,7 +54,7 @@ func NewFastHTTPHandler(h http.Handler) fasthttp.RequestHandler {
 		}
 
 		var w netHTTPResponseWriter
-		h.ServeHTTP(&w, r.WithContext(ctx))
+		h.ServeHTTP(&w, &r)
 
 		ctx.SetStatusCode(w.StatusCode())
 		haveContentType := false
