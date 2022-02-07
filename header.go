@@ -993,6 +993,11 @@ func (h *ResponseHeader) CopyTo(dst *ResponseHeader) {
 	dst.trailer = copyArgs(dst.trailer, h.trailer)
 }
 
+func (h *RequestHeader) CopyCookieTo(dst *RequestHeader) {
+	dst.cookies = copyArgs(dst.cookies, h.cookies)
+	dst.cookiesCollected = h.cookiesCollected
+}
+
 // CopyTo copies all the headers to dst.
 func (h *RequestHeader) CopyTo(dst *RequestHeader) {
 	dst.Reset()
