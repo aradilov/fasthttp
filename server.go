@@ -395,11 +395,11 @@ type Server struct {
 	ConnReject func(addr net.Addr, err error)
 
 	// ConnClose specifies an optional callback function that is
-	// called when a client connection is marked for Close.
+	// called when a client connection changes state to CLOSE.
 	ConnClose func(conn net.Conn, id, requests uint64, created time.Time, reason error)
 
 	// ConnIDLE specifies an optional callback function that is
-	// called for keep-alive connections when a client connection is putting to pool.
+	// called for keep-alive connections when a client connection changes state to IDLE.
 	ConnIDLE func(conn net.Conn, id, requests uint64, idle, read, write time.Duration)
 
 	// Logger, which is used by RequestCtx.Logger().

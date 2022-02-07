@@ -210,6 +210,11 @@ type Client struct {
 	// Default TLS config is used if not set.
 	TLSConfig *tls.Config
 
+	// NewHostClient specifies an optional callback function that is
+	// called when the new host client adds to the client pool.
+	// You could use this method for re-writing predefined settings.
+	NewHostClient func(host string, hc *HostClient)
+
 	// Maximum number of connections per each host which may be established.
 	//
 	// DefaultMaxConnsPerHost is used if not set.
@@ -510,6 +515,11 @@ func (c *Client) Do(req *Request, resp *Response) error {
 			clientReaderPool:              &c.readerPool,
 			clientWriterPool:              &c.writerPool,
 		}
+
+		if hook := c.NewHostClient; hook != nil {
+			hook(string(host), hc)
+		}
+
 		m[string(host)] = hc
 		if len(m) == 1 {
 			startCleaner = true
