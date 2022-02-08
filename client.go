@@ -118,8 +118,7 @@ func DoDeadline(req *Request, resp *Response, deadline time.Time) error {
 // It is recommended obtaining req and resp via AcquireRequest
 // and AcquireResponse in performance-critical code.
 func DoRedirects(req *Request, resp *Response, maxRedirectsCount int) error {
-	_, _, err := doRequestFollowRedirects(req, resp, req.URI().String(), maxRedirectsCount, &defaultClient)
-	return err
+	return DoRequestFollowRedirects(req, resp, req.URI().String(), maxRedirectsCount, &defaultClient)
 }
 
 // Get returns the status code and body of url.
@@ -436,8 +435,7 @@ func (c *Client) DoDeadline(req *Request, resp *Response, deadline time.Time) er
 // It is recommended obtaining req and resp via AcquireRequest
 // and AcquireResponse in performance-critical code.
 func (c *Client) DoRedirects(req *Request, resp *Response, maxRedirectsCount int) error {
-	_, _, err := doRequestFollowRedirects(req, resp, req.URI().String(), maxRedirectsCount, c)
-	return err
+	return DoRequestFollowRedirects(req, resp, req.URI().String(), maxRedirectsCount, c)
 }
 
 // Do performs the given http request and fills the given http response.
@@ -1004,7 +1002,8 @@ func doRequestFollowRedirectsBuffer(req *Request, dst []byte, url string, c Clie
 	oldBody := bodyBuf.B
 	bodyBuf.B = dst
 
-	statusCode, _, err = doRequestFollowRedirects(req, resp, url, defaultMaxRedirectsCount, c)
+	err = DoRequestFollowRedirects(req, resp, url, defaultMaxRedirectsCount, c)
+	statusCode = resp.StatusCode()
 
 	body = bodyBuf.B
 	bodyBuf.B = oldBody
@@ -1014,19 +1013,19 @@ func doRequestFollowRedirectsBuffer(req *Request, dst []byte, url string, c Clie
 	return statusCode, body, err
 }
 
-func doRequestFollowRedirects(req *Request, resp *Response, url string, maxRedirectsCount int, c ClientDoer) (statusCode int, body []byte, err error) {
+func DoRequestFollowRedirects(req *Request, resp *Response, url string, maxRedirectsCount int, c ClientDoer) (err error) {
 	redirectsCount := 0
 
 	for {
 		req.SetRequestURI(url)
-		if err := req.parseURI(); err != nil {
-			return 0, nil, err
+		if err = req.parseURI(); err != nil {
+			return err
 		}
 
 		if err = c.Do(req, resp); err != nil {
 			break
 		}
-		statusCode = resp.Header.StatusCode()
+		statusCode := resp.Header.StatusCode()
 		if !StatusCodeIsRedirect(statusCode) {
 			break
 		}
@@ -1044,7 +1043,7 @@ func doRequestFollowRedirects(req *Request, resp *Response, url string, maxRedir
 		url = getRedirectURL(url, location)
 	}
 
-	return statusCode, body, err
+	return err
 }
 
 func getRedirectURL(baseURL string, location []byte) string {
@@ -1183,8 +1182,7 @@ func (c *HostClient) DoDeadline(req *Request, resp *Response, deadline time.Time
 // It is recommended obtaining req and resp via AcquireRequest
 // and AcquireResponse in performance-critical code.
 func (c *HostClient) DoRedirects(req *Request, resp *Response, maxRedirectsCount int) error {
-	_, _, err := doRequestFollowRedirects(req, resp, req.URI().String(), maxRedirectsCount, c)
-	return err
+	return DoRequestFollowRedirects(req, resp, req.URI().String(), maxRedirectsCount, c)
 }
 
 func clientDoTimeout(req *Request, resp *Response, timeout time.Duration, c ClientDoer) error {
