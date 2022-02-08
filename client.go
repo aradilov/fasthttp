@@ -1343,6 +1343,13 @@ func (c *HostClient) PendingRequests() int {
 	return int(atomic.LoadInt32(&c.pendingRequests))
 }
 
+func (c *HostClient) OpenConns() int {
+	c.connsLock.Lock()
+	openConns := c.connsCount
+	c.connsLock.Unlock()
+	return openConns
+}
+
 func isIdempotent(req *Request) bool {
 	return req.Header.IsGet() || req.Header.IsHead() || req.Header.IsPut()
 }
@@ -1402,6 +1409,8 @@ func (c *HostClient) doNonNilReqResp(req *Request, resp *Response) (bool, error)
 		err := c.Transport(req, resp)
 		return err == nil, err
 	}
+
+	c.PendingRequests()
 
 	cc, err := c.acquireConn(req.timeout, req.ConnectionClose())
 	if err != nil {
