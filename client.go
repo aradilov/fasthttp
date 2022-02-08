@@ -807,6 +807,9 @@ type clientConn struct {
 
 	createdTime time.Time
 	lastUseTime time.Time
+
+	Requests uint64
+	ID       uint64
 }
 
 var startTimeUnix = time.Now().Unix()
@@ -1416,6 +1419,9 @@ func (c *HostClient) doNonNilReqResp(req *Request, resp *Response) (bool, error)
 	if err != nil {
 		return false, err
 	}
+
+	cc.Requests++
+
 	conn := cc.c
 
 	resp.parseNetConn(conn)
@@ -1446,6 +1452,7 @@ func (c *HostClient) doNonNilReqResp(req *Request, resp *Response) (bool, error)
 	if err == nil {
 		err = bw.Flush()
 	}
+
 	if err != nil {
 		c.releaseWriter(bw)
 		c.closeConn(cc)
@@ -1769,6 +1776,8 @@ func acquireClientConn(conn net.Conn) *clientConn {
 	cc := v.(*clientConn)
 	cc.c = conn
 	cc.createdTime = time.Now()
+	cc.ID = nextConnID()
+
 	return cc
 }
 
