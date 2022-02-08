@@ -1046,6 +1046,85 @@ func DoRequestFollowRedirects(req *Request, resp *Response, url string, maxRedir
 	return err
 }
 
+func DoRequestFollowRedirectsDeadline(req *Request, resp *Response, url string, maxRedirectsCount int, deadline time.Time, c ClientDoer) (err error) {
+	timeout := -time.Since(deadline)
+	if timeout <= 0 {
+		return ErrTimeout
+	}
+
+	var ch chan error
+	chv := errorChPool.Get()
+	if chv == nil {
+		chv = make(chan error, 1)
+	}
+	ch = chv.(chan error)
+
+	// Make req and resp copies, since on timeout they no longer
+	// may be accessed.
+	reqCopy := AcquireRequest()
+	req.copyToSkipBody(reqCopy)
+	swapRequestBody(req, reqCopy)
+	respCopy := AcquireResponse()
+	if resp != nil {
+		// Not calling resp.copyToSkipBody(respCopy) here to avoid
+		// unexpected messing with headers
+		respCopy.SkipBody = resp.SkipBody
+	}
+
+	// Note that the request continues execution on ErrTimeout until
+	// client-specific ReadTimeout exceeds. This helps limiting load
+	// on slow hosts by MaxConns* concurrent requests.
+	//
+	// Without this 'hack' the load on slow host could exceed MaxConns*
+	// concurrent requests, since timed out requests on client side
+	// usually continue execution on the host.
+
+	var mu sync.Mutex
+	var timedout, responded bool
+
+	go func() {
+		reqCopy.timeout = timeout
+		errDo := DoRequestFollowRedirects(reqCopy, respCopy, reqCopy.URI().String(), maxRedirectsCount, c)
+		mu.Lock()
+		{
+			if !timedout {
+				if resp != nil {
+					respCopy.copyToSkipBody(resp)
+					swapResponseBody(resp, respCopy)
+				}
+				swapRequestBody(reqCopy, req)
+				ch <- errDo
+				responded = true
+			}
+		}
+		mu.Unlock()
+
+		ReleaseResponse(respCopy)
+		ReleaseRequest(reqCopy)
+	}()
+
+	tc := AcquireTimer(timeout)
+	select {
+	case err = <-ch:
+	case <-tc.C:
+		mu.Lock()
+		{
+			if responded {
+				err = <-ch
+			} else {
+				timedout = true
+				err = ErrTimeout
+			}
+		}
+		mu.Unlock()
+	}
+	ReleaseTimer(tc)
+
+	errorChPool.Put(chv)
+
+	return err
+}
+
 func getRedirectURL(baseURL string, location []byte) string {
 	u := AcquireURI()
 	u.Update(baseURL)
