@@ -2388,7 +2388,7 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 			readDuration = ctx.time.Sub(connTime)
 		} else {
 			readDuration = ctx.time.Sub(fbrTime)
-			idleDuration = startTime.Sub(fbrTime)
+			idleDuration = fbrTime.Sub(startTime)
 		}
 
 		ctx.readDuration = readDuration
