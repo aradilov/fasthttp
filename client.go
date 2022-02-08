@@ -413,7 +413,7 @@ func (c *Client) DoTimeout(req *Request, resp *Response, timeout time.Duration) 
 // It is recommended obtaining req and resp via AcquireRequest
 // and AcquireResponse in performance-critical code.
 func (c *Client) DoDeadline(req *Request, resp *Response, deadline time.Time) error {
-	return clientDoDeadline(req, resp, deadline, c)
+	return ClientDoDeadline(req, resp, deadline, c)
 }
 
 // DoRedirects performs the given http request and fills the given http response,
@@ -868,11 +868,11 @@ func (c *HostClient) Post(dst []byte, url string, postArgs *Args) (statusCode in
 	return clientPostURL(dst, url, postArgs, c)
 }
 
-type clientDoer interface {
+type ClientDoer interface {
 	Do(req *Request, resp *Response) error
 }
 
-func clientGetURL(dst []byte, url string, c clientDoer) (statusCode int, body []byte, err error) {
+func clientGetURL(dst []byte, url string, c ClientDoer) (statusCode int, body []byte, err error) {
 	req := AcquireRequest()
 
 	statusCode, body, err = doRequestFollowRedirectsBuffer(req, dst, url, c)
@@ -881,7 +881,7 @@ func clientGetURL(dst []byte, url string, c clientDoer) (statusCode int, body []
 	return statusCode, body, err
 }
 
-func clientGetURLTimeout(dst []byte, url string, timeout time.Duration, c clientDoer) (statusCode int, body []byte, err error) {
+func clientGetURLTimeout(dst []byte, url string, timeout time.Duration, c ClientDoer) (statusCode int, body []byte, err error) {
 	deadline := time.Now().Add(timeout)
 	return clientGetURLDeadline(dst, url, deadline, c)
 }
@@ -892,7 +892,7 @@ type clientURLResponse struct {
 	err        error
 }
 
-func clientGetURLDeadline(dst []byte, url string, deadline time.Time, c clientDoer) (statusCode int, body []byte, err error) {
+func clientGetURLDeadline(dst []byte, url string, deadline time.Time, c ClientDoer) (statusCode int, body []byte, err error) {
 	timeout := -time.Since(deadline)
 	if timeout <= 0 {
 		return 0, dst, ErrTimeout
@@ -967,7 +967,7 @@ func clientGetURLDeadline(dst []byte, url string, deadline time.Time, c clientDo
 
 var clientURLResponseChPool sync.Pool
 
-func clientPostURL(dst []byte, url string, postArgs *Args, c clientDoer) (statusCode int, body []byte, err error) {
+func clientPostURL(dst []byte, url string, postArgs *Args, c ClientDoer) (statusCode int, body []byte, err error) {
 	req := AcquireRequest()
 	req.Header.SetMethod(MethodPost)
 	req.Header.SetContentTypeBytes(strPostArgsContentType)
@@ -997,7 +997,7 @@ var (
 
 const defaultMaxRedirectsCount = 16
 
-func doRequestFollowRedirectsBuffer(req *Request, dst []byte, url string, c clientDoer) (statusCode int, body []byte, err error) {
+func doRequestFollowRedirectsBuffer(req *Request, dst []byte, url string, c ClientDoer) (statusCode int, body []byte, err error) {
 	resp := AcquireResponse()
 	bodyBuf := resp.bodyBuffer()
 	resp.keepBodyBuffer = true
@@ -1014,7 +1014,7 @@ func doRequestFollowRedirectsBuffer(req *Request, dst []byte, url string, c clie
 	return statusCode, body, err
 }
 
-func doRequestFollowRedirects(req *Request, resp *Response, url string, maxRedirectsCount int, c clientDoer) (statusCode int, body []byte, err error) {
+func doRequestFollowRedirects(req *Request, resp *Response, url string, maxRedirectsCount int, c ClientDoer) (statusCode int, body []byte, err error) {
 	redirectsCount := 0
 
 	for {
@@ -1160,7 +1160,7 @@ func (c *HostClient) DoTimeout(req *Request, resp *Response, timeout time.Durati
 // It is recommended obtaining req and resp via AcquireRequest
 // and AcquireResponse in performance-critical code.
 func (c *HostClient) DoDeadline(req *Request, resp *Response, deadline time.Time) error {
-	return clientDoDeadline(req, resp, deadline, c)
+	return ClientDoDeadline(req, resp, deadline, c)
 }
 
 // DoRedirects performs the given http request and fills the given http response,
@@ -1187,12 +1187,12 @@ func (c *HostClient) DoRedirects(req *Request, resp *Response, maxRedirectsCount
 	return err
 }
 
-func clientDoTimeout(req *Request, resp *Response, timeout time.Duration, c clientDoer) error {
+func clientDoTimeout(req *Request, resp *Response, timeout time.Duration, c ClientDoer) error {
 	deadline := time.Now().Add(timeout)
-	return clientDoDeadline(req, resp, deadline, c)
+	return ClientDoDeadline(req, resp, deadline, c)
 }
 
-func clientDoDeadline(req *Request, resp *Response, deadline time.Time, c clientDoer) error {
+func ClientDoDeadline(req *Request, resp *Response, deadline time.Time, c ClientDoer) error {
 	timeout := -time.Since(deadline)
 	if timeout <= 0 {
 		return ErrTimeout
