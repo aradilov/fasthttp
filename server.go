@@ -625,6 +625,10 @@ type RequestCtx struct {
 
 	hijackHandler    HijackHandler
 	hijackNoResponse bool
+
+	// AfterWrite specifies an optional callback function that is called
+	// when the handler's response is written to the socket.
+	AfterWriteHook AfterWriteCallback
 }
 
 // HijackHandler must process the hijacked connection c.
@@ -637,6 +641,19 @@ type RequestCtx struct {
 // When KeepHijackedConns enabled, fasthttp will not Close() the connection,
 // you must do it when you need it. You must not use c in any way after calling Close().
 type HijackHandler func(c net.Conn)
+
+// AfterWriteCallback specifies an optional callback function that is called
+// when the handler's response is written to the socket.
+//
+// It can be useful to log the read/write duration and any exceptions to keep track of traffic handling.
+type AfterWriteCallback func(remote, local net.Addr, id, requests uint64, idle, read, write time.Duration, flush bool, err error)
+
+// SetHookAfterWrite is used to set the AfterWriteCallback
+//
+// Note: AfterWriteCallback works only for not Hijacked Response
+func (ctx *RequestCtx) SetHookAfterWrite(hook AfterWriteCallback) {
+	ctx.AfterWriteHook = hook
+}
 
 // Hijack registers the given handler for connection hijacking.
 //
@@ -2144,6 +2161,7 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 		br *bufio.Reader
 		bw *bufio.Writer
 
+		afterWriteHook   AfterWriteCallback
 		timeoutResponse  *Response
 		hijackHandler    HijackHandler
 		hijackNoResponse bool
@@ -2401,6 +2419,9 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 
 		startTime = time.Now()
 
+		afterWriteHook = ctx.AfterWriteHook
+		ctx.AfterWriteHook = nil
+
 		timeoutResponse = ctx.timeoutResponse
 		if timeoutResponse != nil {
 			// Acquire a new ctx because the old one will still be in use by the timeout out handler.
@@ -2453,6 +2474,10 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 				bw = acquireWriter(ctx)
 			}
 			if err = writeResponse(ctx, bw); err != nil {
+				if nil != afterWriteHook {
+					afterWriteHook(c.RemoteAddr(), c.LocalAddr(), connID, connRequestNum, idleDuration, readDuration, 0, false, ConnWriteError{err})
+				}
+				s.setCloseReason(c, connID, connRequestNum, connTime, ConnWriteError{err})
 				break
 			}
 
@@ -2461,22 +2486,42 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 			// This benchmark will send 16 pipelined requests. It is faster to pack as many responses
 			// in a TCP packet and send it back at once than waiting for a flush every request.
 			// In real world circumstances this behaviour could be argued as being wrong.
-			if br == nil || br.Buffered() == 0 || connectionClose {
+			flushResponse := br == nil || br.Buffered() == 0 || connectionClose
+
+			if flushResponse {
 				err = bw.Flush()
+				writeDuration = time.Now().Sub(startTime)
+
 				if err != nil {
+					if nil != afterWriteHook {
+						afterWriteHook(c.RemoteAddr(), c.LocalAddr(), connID, connRequestNum, idleDuration, readDuration, writeTimeout, true, ConnWriteError{err})
+					}
 					s.setCloseReason(c, connID, connRequestNum, connTime, ConnWriteError{err})
 					break
 				}
 			}
+
 			if connectionClose {
+				var closeInitiator error
 				if ctx.Response.ConnectionClose() || s.CloseOnShutdown && atomic.LoadInt32(&s.stop) == 1 {
-					s.setCloseReason(c, connID, connRequestNum, connTime, ConnResetServer)
+					closeInitiator = ConnResetServer
 				} else {
-					s.setCloseReason(c, connID, connRequestNum, connTime, ConnResetClient)
+					closeInitiator = ConnResetClient
+				}
+
+				s.setCloseReason(c, connID, connRequestNum, connTime, closeInitiator)
+
+				if nil != afterWriteHook {
+					afterWriteHook(c.RemoteAddr(), c.LocalAddr(), connID, connRequestNum, idleDuration, readDuration, writeTimeout, flushResponse, closeInitiator)
 				}
 
 				break
 			}
+
+			if nil != afterWriteHook {
+				afterWriteHook(c.RemoteAddr(), c.LocalAddr(), connID, connRequestNum, idleDuration, readDuration, writeTimeout, flushResponse, nil)
+			}
+
 			if s.ReduceMemoryUsage && hijackHandler == nil {
 				releaseWriter(s, bw)
 				bw = nil
@@ -2512,7 +2557,6 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 			}
 		}
 
-		writeDuration = time.Now().Sub(startTime)
 		s.setIDLE(c, connID, connRequestNum, idleDuration, readDuration, writeDuration)
 
 		ctx.userValues.Reset()
