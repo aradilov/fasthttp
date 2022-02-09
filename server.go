@@ -646,7 +646,7 @@ type HijackHandler func(c net.Conn)
 // when the handler's response is written to the socket.
 //
 // It can be useful to log the read/write duration and any exceptions to keep track of traffic handling.
-type AfterWriteCallback func(remote, local net.Addr, id, requests uint64, idle, read, write time.Duration, flush bool, err error)
+type AfterWriteCallback func(remote, local net.Addr, id, requests uint64, idle, read, write, handler time.Duration, flush bool, err error)
 
 // SetHookAfterWrite is used to set the AfterWriteCallback
 //
@@ -2174,9 +2174,10 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 		startTime time.Time
 		fbrTime   time.Time
 
-		readDuration  time.Duration
-		writeDuration time.Duration
-		idleDuration  time.Duration
+		readDuration    time.Duration
+		writeDuration   time.Duration
+		handlerDuration time.Duration
+		idleDuration    time.Duration
 	)
 	for {
 		startTime = time.Now()
@@ -2416,8 +2417,8 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 		if continueReadingRequest {
 			s.Handler(ctx)
 		}
-
 		startTime = time.Now()
+		handlerDuration = startTime.Sub(ctx.time)
 
 		afterWriteHook = ctx.AfterWriteHook
 		ctx.AfterWriteHook = nil
@@ -2475,7 +2476,7 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 			}
 			if err = writeResponse(ctx, bw); err != nil {
 				if nil != afterWriteHook {
-					afterWriteHook(c.RemoteAddr(), c.LocalAddr(), connID, connRequestNum, idleDuration, readDuration, 0, false, ConnWriteError{err})
+					afterWriteHook(c.RemoteAddr(), c.LocalAddr(), connID, connRequestNum, idleDuration, readDuration, 0, handlerDuration, false, ConnWriteError{err})
 				}
 				s.setCloseReason(c, connID, connRequestNum, connTime, ConnWriteError{err})
 				break
@@ -2494,7 +2495,7 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 
 				if err != nil {
 					if nil != afterWriteHook {
-						afterWriteHook(c.RemoteAddr(), c.LocalAddr(), connID, connRequestNum, idleDuration, readDuration, writeTimeout, true, ConnWriteError{err})
+						afterWriteHook(c.RemoteAddr(), c.LocalAddr(), connID, connRequestNum, idleDuration, readDuration, writeDuration, handlerDuration, true, ConnWriteError{err})
 					}
 					s.setCloseReason(c, connID, connRequestNum, connTime, ConnWriteError{err})
 					break
@@ -2512,14 +2513,14 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 				s.setCloseReason(c, connID, connRequestNum, connTime, closeInitiator)
 
 				if nil != afterWriteHook {
-					afterWriteHook(c.RemoteAddr(), c.LocalAddr(), connID, connRequestNum, idleDuration, readDuration, writeTimeout, flushResponse, closeInitiator)
+					afterWriteHook(c.RemoteAddr(), c.LocalAddr(), connID, connRequestNum, idleDuration, readDuration, writeDuration, handlerDuration, flushResponse, closeInitiator)
 				}
 
 				break
 			}
 
 			if nil != afterWriteHook {
-				afterWriteHook(c.RemoteAddr(), c.LocalAddr(), connID, connRequestNum, idleDuration, readDuration, writeTimeout, flushResponse, nil)
+				afterWriteHook(c.RemoteAddr(), c.LocalAddr(), connID, connRequestNum, idleDuration, readDuration, writeDuration, handlerDuration, flushResponse, nil)
 			}
 
 			if s.ReduceMemoryUsage && hijackHandler == nil {
