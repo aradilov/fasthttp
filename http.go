@@ -94,10 +94,10 @@ type Response struct {
 	keepBodyBuffer        bool
 	secureErrorLogMessage bool
 
-	// Remote TCPAddr from concurrently net.Conn
-	raddr net.Addr
-	// Local TCPAddr from concurrently net.Conn
-	laddr net.Addr
+	// Remote IP from concurrently net.Conn
+	raddr net.IP
+	// Local IP from concurrently net.Conn
+	laddr net.IP
 
 	connID         uint64
 	connRequestNum uint64
@@ -308,8 +308,8 @@ func (w *requestBodyWriter) Write(p []byte) (int, error) {
 }
 
 func (resp *Response) parseNetConn(conn net.Conn) {
-	resp.raddr = conn.RemoteAddr()
-	resp.laddr = conn.LocalAddr()
+	resp.raddr = append(resp.raddr[:0], addrToIP(conn.RemoteAddr())...)
+	resp.laddr = append(resp.laddr[:0], addrToIP(conn.LocalAddr())...)
 }
 
 // ConnRequestNum returns request sequence number
@@ -328,15 +328,13 @@ func (resp *Response) ConnID() uint64 {
 	return resp.connID
 }
 
-// RemoteAddr returns the remote network address. The Addr returned is shared
-// by all invocations of RemoteAddr, so do not modify it.
-func (resp *Response) RemoteAddr() net.Addr {
+// RemoteAddr returns the remote network address.
+func (resp *Response) RemoteAddr() net.IP {
 	return resp.raddr
 }
 
-// LocalAddr returns the local network address. The Addr returned is shared
-// by all invocations of LocalAddr, so do not modify it.
-func (resp *Response) LocalAddr() net.Addr {
+// LocalAddr returns the local network address.
+func (resp *Response) LocalAddr() net.IP {
 	return resp.laddr
 }
 
@@ -759,6 +757,11 @@ func (req *Request) copyToSkipBody(dst *Request) {
 
 // CopyTo copies resp contents to dst except of body stream.
 func (resp *Response) CopyTo(dst *Response) {
+	dst.laddr = append(dst.laddr[:0], resp.laddr...)
+	dst.raddr = append(dst.raddr[:0], resp.raddr...)
+	dst.connID = resp.connID
+	dst.connRequestNum = resp.connRequestNum
+
 	resp.copyToSkipBody(dst)
 	if resp.bodyRaw != nil {
 		dst.bodyRaw = resp.bodyRaw
@@ -1008,8 +1011,8 @@ func (resp *Response) Reset() {
 	resp.Header.Reset()
 	resp.resetSkipHeader()
 	resp.SkipBody = false
-	resp.raddr = nil
-	resp.laddr = nil
+	resp.raddr = resp.raddr[:0]
+	resp.laddr = resp.laddr[:0]
 	resp.connID = 0
 	resp.connRequestNum = 0
 	resp.ImmediateHeaderFlush = false
