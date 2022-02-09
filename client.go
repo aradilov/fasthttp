@@ -770,12 +770,29 @@ type HostClient struct {
 	// Transport defines a transport-like mechanism that wraps every request/response.
 	Transport TransportFunc
 
+	// ConnState specifies an optional callback function that is
+	// called when a client connection changes state. See the
+	// ConnState type and associated constants for details.
+	ConnState func(hc *HostClient, conn *ClientConn, state ConnState)
+
+	// ConnReject specifies an optional callback function that is
+	// called when a client connection cannot be established.
+	ConnReject func(hc *HostClient, err error)
+
+	// ConnClose specifies an optional callback function that is
+	// called when a client connection changes state to CLOSE.
+	ConnClose func(hc *HostClient, conn *ClientConn, reason error)
+
+	// ConnIDLE specifies an optional callback function that is
+	// called for keep-alive connections when a client connection changes state to IDLE.
+	ConnIDLE func(hc *HostClient, conn *ClientConn, idle, read, write time.Duration)
+
 	clientName  atomic.Value
 	lastUseTime uint32
 
 	connsLock  sync.Mutex
 	connsCount int
-	conns      []*clientConn
+	conns      []*ClientConn
 	connsWait  *wantConnQueue
 
 	addrsLock sync.Mutex
@@ -800,17 +817,85 @@ type HostClient struct {
 	connsCleanerRun bool
 }
 
-type clientConn struct {
+type ClientConn struct {
 	c net.Conn
 
-	createdTime time.Time
+	connTime    time.Time
 	lastUseTime time.Time
 
-	Requests uint64
-	ID       uint64
+	connRequestNum uint64
+	connID         uint64
+}
+
+// ConnRequestNum returns request sequence number
+// for the current connection.
+//
+// Sequence starts with 1.
+func (c *ClientConn) ConnRequestNum() uint64 {
+	return c.connRequestNum
+}
+
+// ConnID returns unique connection ID.
+//
+// This ID may be used to match distinct requests to the same incoming
+// connection.
+func (c *ClientConn) ConnID() uint64 {
+	return c.connID
+}
+
+// ConnTime returns the time the server started serving the connection
+// the current request came from.
+func (c *ClientConn) ConnTime() time.Time {
+	return c.connTime
+}
+
+// IdleDuration returns the connection IDLE time between two requests.
+func (c *ClientConn) IdleDuration() time.Duration {
+	if c.lastUseTime.IsZero() {
+		return 0
+	}
+	return time.Now().Sub(c.lastUseTime)
+}
+
+// RemoteAddr returns the remote network address. The Addr returned is shared
+// by all invocations of RemoteAddr, so do not modify it.
+func (c *ClientConn) RemoteAddr() net.Addr {
+	return c.c.RemoteAddr()
+}
+
+// LocalAddr returns the local network address. The Addr returned is shared
+// by all invocations of LocalAddr, so do not modify it.
+func (c *ClientConn) LocalAddr() net.Addr {
+	return c.c.LocalAddr()
 }
 
 var startTimeUnix = time.Now().Unix()
+
+func (c *HostClient) setIDLE(conn *ClientConn, idle, read, write time.Duration) {
+	c.setState(conn, StateIdle)
+
+	if hook := c.ConnIDLE; hook != nil {
+		hook(c, conn, idle, read, write)
+	}
+}
+
+func (c *HostClient) setCloseReason(conn *ClientConn, reason error) {
+	if hook := c.ConnClose; hook != nil {
+		hook(c, conn, reason)
+	}
+}
+
+func (c *HostClient) setReject(reason error) {
+	if hook := c.ConnClose; hook != nil {
+		hook(c, nil, reason)
+	}
+}
+
+func (c *HostClient) setState(conn *ClientConn, state ConnState) {
+	if hook := c.ConnState; hook != nil {
+		hook(c, conn, state)
+	}
+}
 
 // LastUseTime returns time the client was last used
 func (c *HostClient) LastUseTime() time.Time {
@@ -1490,31 +1575,33 @@ func (c *HostClient) doNonNilReqResp(req *Request, resp *Response) (bool, error)
 		return err == nil, err
 	}
 
-	c.PendingRequests()
-
 	cc, err := c.acquireConn(req.timeout, req.ConnectionClose())
 	if err != nil {
+		c.setReject(err)
 		return false, err
 	}
 
-	cc.Requests++
+	cc.connRequestNum++
+	c.setState(cc, StateActive)
 
 	conn := cc.c
-
 	resp.parseNetConn(conn)
+
+	resp.connID = cc.ConnID()
+	resp.connRequestNum = cc.ConnRequestNum()
 
 	if c.WriteTimeout > 0 {
 		// Set Deadline every time, since golang has fixed the performance issue
 		// See https://github.com/golang/go/issues/15133#issuecomment-271571395 for details
 		currentTime := time.Now()
 		if err = conn.SetWriteDeadline(currentTime.Add(c.WriteTimeout)); err != nil {
-			c.closeConn(cc)
-			return true, err
+			panic(fmt.Sprintf("BUG: error in SetWriteDeadline(%s): %s", c.WriteTimeout, err))
+
 		}
 	}
 
 	resetConnection := false
-	if c.MaxConnDuration > 0 && time.Since(cc.createdTime) > c.MaxConnDuration && !req.ConnectionClose() {
+	if c.MaxConnDuration > 0 && time.Since(cc.connTime) > c.MaxConnDuration && !req.ConnectionClose() {
 		req.SetConnectionClose()
 		resetConnection = true
 	}
@@ -1527,10 +1614,12 @@ func (c *HostClient) doNonNilReqResp(req *Request, resp *Response) (bool, error)
 	}
 
 	if err == nil {
+		c.setCloseReason(cc, ConnWriteError{err})
 		err = bw.Flush()
 	}
 
 	if err != nil {
+		c.setCloseReason(cc, ConnWriteError{err})
 		c.releaseWriter(bw)
 		c.closeConn(cc)
 		return true, err
@@ -1542,8 +1631,7 @@ func (c *HostClient) doNonNilReqResp(req *Request, resp *Response) (bool, error)
 		// See https://github.com/golang/go/issues/15133#issuecomment-271571395 for details
 		currentTime := time.Now()
 		if err = conn.SetReadDeadline(currentTime.Add(c.ReadTimeout)); err != nil {
-			c.closeConn(cc)
-			return true, err
+			panic(fmt.Sprintf("BUG: error in SetReadDeadline(%s): %s", c.ReadTimeout, err))
 		}
 	}
 
@@ -1556,6 +1644,7 @@ func (c *HostClient) doNonNilReqResp(req *Request, resp *Response) (bool, error)
 
 	br := c.acquireReader(conn)
 	if err = resp.ReadLimitBody(br, c.MaxResponseBodySize); err != nil {
+		c.setCloseReason(cc, ConnReadError{err})
 		c.releaseReader(br)
 		c.closeConn(cc)
 		// Don't retry in case of ErrBodyTooLarge since we will just get the same again.
@@ -1564,9 +1653,14 @@ func (c *HostClient) doNonNilReqResp(req *Request, resp *Response) (bool, error)
 	}
 	c.releaseReader(br)
 
-	if resetConnection || req.ConnectionClose() || resp.ConnectionClose() {
+	if resetConnection || req.ConnectionClose() {
+		c.setCloseReason(cc, ConnResetServer)
+		c.closeConn(cc)
+	} else if resp.ConnectionClose() {
+		c.setCloseReason(cc, ConnResetClient)
 		c.closeConn(cc)
 	} else {
+		c.setIDLE(cc, 0, 0, 0)
 		c.releaseConn(cc)
 	}
 
@@ -1616,7 +1710,7 @@ func (c *HostClient) SetMaxConns(newMaxConns int) {
 	c.connsLock.Unlock()
 }
 
-func (c *HostClient) acquireConn(reqTimeout time.Duration, connectionClose bool) (cc *clientConn, err error) {
+func (c *HostClient) acquireConn(reqTimeout time.Duration, connectionClose bool) (cc *ClientConn, err error) {
 	createConn := false
 	startCleaner := false
 
@@ -1701,6 +1795,7 @@ func (c *HostClient) acquireConn(reqTimeout time.Duration, connectionClose bool)
 		return nil, err
 	}
 	cc = acquireClientConn(conn)
+	c.setState(cc, StateNew)
 
 	return cc, nil
 }
@@ -1737,7 +1832,7 @@ func (c *HostClient) dialConnFor(w *wantConn) {
 // in use.
 func (c *HostClient) CloseIdleConnections() {
 	c.connsLock.Lock()
-	scratch := append([]*clientConn{}, c.conns...)
+	scratch := append([]*ClientConn{}, c.conns...)
 	for i := range c.conns {
 		c.conns[i] = nil
 	}
@@ -1751,7 +1846,7 @@ func (c *HostClient) CloseIdleConnections() {
 
 func (c *HostClient) connsCleaner() {
 	var (
-		scratch             []*clientConn
+		scratch             []*ClientConn
 		maxIdleConnDuration = c.MaxIdleConnDuration
 	)
 	if maxIdleConnDuration <= 0 {
@@ -1805,7 +1900,7 @@ func (c *HostClient) connsCleaner() {
 	}
 }
 
-func (c *HostClient) closeConn(cc *clientConn) {
+func (c *HostClient) closeConn(cc *ClientConn) {
 	c.decConnsCount()
 	cc.c.Close()
 	releaseClientConn(cc)
@@ -1845,28 +1940,28 @@ func (c *HostClient) ConnsCount() int {
 	return c.connsCount
 }
 
-func acquireClientConn(conn net.Conn) *clientConn {
+func acquireClientConn(conn net.Conn) *ClientConn {
 	v := clientConnPool.Get()
 	if v == nil {
-		v = &clientConn{}
+		v = &ClientConn{}
 	}
-	cc := v.(*clientConn)
+	cc := v.(*ClientConn)
 	cc.c = conn
-	cc.createdTime = time.Now()
-	cc.ID = nextConnID()
+	cc.connTime = time.Now()
+	cc.connID = nextConnID()
 
 	return cc
 }
 
-func releaseClientConn(cc *clientConn) {
+func releaseClientConn(cc *ClientConn) {
 	// Reset all fields.
-	*cc = clientConn{}
+	*cc = ClientConn{}
 	clientConnPool.Put(cc)
 }
 
 var clientConnPool sync.Pool
 
-func (c *HostClient) releaseConn(cc *clientConn) {
+func (c *HostClient) releaseConn(cc *ClientConn) {
 	cc.lastUseTime = time.Now()
 	if c.MaxConnWaitTimeout <= 0 {
 		c.connsLock.Lock()
@@ -2162,7 +2257,7 @@ func addMissingPort(addr string, isTLS bool) string {
 type wantConn struct {
 	ready chan struct{}
 	mu    sync.Mutex // protects conn, err, close(ready)
-	conn  *clientConn
+	conn  *ClientConn
 	err   error
 }
 
@@ -2177,7 +2272,7 @@ func (w *wantConn) waiting() bool {
 }
 
 // tryDeliver attempts to deliver conn, err to w and reports whether it succeeded.
-func (w *wantConn) tryDeliver(conn *clientConn, err error) bool {
+func (w *wantConn) tryDeliver(conn *ClientConn, err error) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 

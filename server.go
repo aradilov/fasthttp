@@ -2604,10 +2604,10 @@ func (s *Server) setReject(addr net.Addr, err error) {
 	}
 }
 
-func (s *Server) setState(nc net.Conn, state ConnState) {
-	s.trackConn(nc, state)
+func (s *Server) setState(conn net.Conn, state ConnState) {
+	s.trackConn(conn, state)
 	if hook := s.ConnState; hook != nil {
-		hook(nc, state)
+		hook(conn, state)
 	}
 }
 

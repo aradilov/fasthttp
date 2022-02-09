@@ -98,6 +98,9 @@ type Response struct {
 	raddr net.Addr
 	// Local TCPAddr from concurrently net.Conn
 	laddr net.Addr
+
+	connID         uint64
+	connRequestNum uint64
 }
 
 // SetHost sets host for the request.
@@ -307,6 +310,22 @@ func (w *requestBodyWriter) Write(p []byte) (int, error) {
 func (resp *Response) parseNetConn(conn net.Conn) {
 	resp.raddr = conn.RemoteAddr()
 	resp.laddr = conn.LocalAddr()
+}
+
+// ConnRequestNum returns request sequence number
+// for the current connection.
+//
+// Sequence starts with 1.
+func (resp *Response) ConnRequestNum() uint64 {
+	return resp.connRequestNum
+}
+
+// ConnID returns unique connection ID.
+//
+// This ID may be used to match distinct requests to the same incoming
+// connection.
+func (resp *Response) ConnID() uint64 {
+	return resp.connID
 }
 
 // RemoteAddr returns the remote network address. The Addr returned is shared
@@ -991,6 +1010,8 @@ func (resp *Response) Reset() {
 	resp.SkipBody = false
 	resp.raddr = nil
 	resp.laddr = nil
+	resp.connID = 0
+	resp.connRequestNum = 0
 	resp.ImmediateHeaderFlush = false
 }
 
