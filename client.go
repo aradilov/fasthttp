@@ -212,7 +212,24 @@ type Client struct {
 	// NewHostClient specifies an optional callback function that is
 	// called when the new host client adds to the client pool.
 	// You could use this method for re-writing predefined settings.
-	NewHostClient func(host string, hc *HostClient)
+	NewHostClient func(hc *HostClient)
+
+	// ConnState specifies an optional callback function that is
+	// called when a client connection changes state. See the
+	// ConnState type and associated constants for details.
+	ConnState func(hc *HostClient, conn *ClientConn, state ConnState)
+
+	// ConnReject specifies an optional callback function that is
+	// called when a client connection cannot be established.
+	ConnReject func(hc *HostClient, err error)
+
+	// ConnClose specifies an optional callback function that is
+	// called when a client connection changes state to CLOSE.
+	ConnClose func(hc *HostClient, conn *ClientConn, reason error)
+
+	// ConnIDLE specifies an optional callback function that is
+	// called for keep-alive connections when a client connection changes state to IDLE.
+	ConnIDLE func(hc *HostClient, conn *ClientConn, idle, read, write time.Duration)
 
 	// Maximum number of connections per each host which may be established.
 	//
@@ -512,10 +529,14 @@ func (c *Client) Do(req *Request, resp *Response) error {
 			RetryIf:                       c.RetryIf,
 			clientReaderPool:              &c.readerPool,
 			clientWriterPool:              &c.writerPool,
+			ConnState:                     c.ConnState,
+			ConnReject:                    c.ConnReject,
+			ConnClose:                     c.ConnClose,
+			ConnIDLE:                      c.ConnIDLE,
 		}
 
 		if hook := c.NewHostClient; hook != nil {
-			hook(string(host), hc)
+			hook(hc)
 		}
 
 		m[string(host)] = hc
