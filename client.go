@@ -219,10 +219,6 @@ type Client struct {
 	// ConnState type and associated constants for details.
 	ConnState func(hc *HostClient, conn *ClientConn, state ConnState)
 
-	// ConnReject specifies an optional callback function that is
-	// called when a client connection cannot be established.
-	ConnReject func(hc *HostClient, err error)
-
 	// ConnClose specifies an optional callback function that is
 	// called when a client connection changes state to CLOSE.
 	ConnClose func(hc *HostClient, conn *ClientConn, reason error)
@@ -530,7 +526,6 @@ func (c *Client) Do(req *Request, resp *Response) error {
 			clientReaderPool:              &c.readerPool,
 			clientWriterPool:              &c.writerPool,
 			ConnState:                     c.ConnState,
-			ConnReject:                    c.ConnReject,
 			ConnClose:                     c.ConnClose,
 			ConnIDLE:                      c.ConnIDLE,
 		}
@@ -796,10 +791,6 @@ type HostClient struct {
 	// ConnState type and associated constants for details.
 	ConnState func(hc *HostClient, conn *ClientConn, state ConnState)
 
-	// ConnReject specifies an optional callback function that is
-	// called when a client connection cannot be established.
-	ConnReject func(hc *HostClient, err error)
-
 	// ConnClose specifies an optional callback function that is
 	// called when a client connection changes state to CLOSE.
 	ConnClose func(hc *HostClient, conn *ClientConn, reason error)
@@ -903,12 +894,6 @@ func (c *HostClient) setIDLE(conn *ClientConn, idle, read, write time.Duration) 
 func (c *HostClient) setCloseReason(conn *ClientConn, reason error) {
 	if hook := c.ConnClose; hook != nil {
 		hook(c, conn, reason)
-	}
-}
-
-func (c *HostClient) setReject(reason error) {
-	if hook := c.ConnClose; hook != nil {
-		hook(c, nil, reason)
 	}
 }
 
@@ -1598,7 +1583,7 @@ func (c *HostClient) doNonNilReqResp(req *Request, resp *Response) (bool, error)
 
 	cc, err := c.acquireConn(req.timeout, req.ConnectionClose())
 	if err != nil {
-		c.setReject(err)
+		c.setCloseReason(nil, err)
 		return false, err
 	}
 
