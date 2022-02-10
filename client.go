@@ -1635,7 +1635,6 @@ func (c *HostClient) doNonNilReqResp(req *Request, resp *Response) (bool, error)
 	}
 
 	if err == nil {
-		c.setCloseReason(cc, ConnWriteError{err})
 		err = bw.Flush()
 	}
 
