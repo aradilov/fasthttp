@@ -1075,7 +1075,7 @@ func (req *Request) ReadLimitBody(r *bufio.Reader, maxBodySize int) error {
 }
 
 func (req *Request) readLimitBody(r *bufio.Reader, maxBodySize int, getOnly bool, preParseMultipartForm bool) error {
-	// Do not reset the request here - the caller must reset it before
+	// Do not Reset the request here - the caller must Reset it before
 	// calling this method.
 
 	if getOnly && !req.Header.IsGet() {
@@ -1093,7 +1093,7 @@ func (req *Request) readLimitBody(r *bufio.Reader, maxBodySize int, getOnly bool
 }
 
 func (req *Request) readBodyStream(r *bufio.Reader, maxBodySize int, getOnly bool, preParseMultipartForm bool) error {
-	// Do not reset the request here - the caller must reset it before
+	// Do not Reset the request here - the caller must Reset it before
 	// calling this method.
 
 	if getOnly && !req.Header.IsGet() {

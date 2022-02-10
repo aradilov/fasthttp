@@ -223,7 +223,7 @@ func (wp *workerPool) workerFunc(ch *workerChan) {
 		if err = wp.WorkerFunc(c); err != nil && err != errHijacked {
 			errStr := err.Error()
 			if wp.LogAllErrors || !(strings.Contains(errStr, "broken pipe") ||
-				strings.Contains(errStr, "reset by peer") ||
+				strings.Contains(errStr, "Reset by peer") ||
 				strings.Contains(errStr, "request headers: small read buffer") ||
 				strings.Contains(errStr, "unexpected EOF") ||
 				strings.Contains(errStr, "i/o timeout")) {

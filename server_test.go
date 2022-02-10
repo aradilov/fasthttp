@@ -2090,7 +2090,7 @@ func TestServeConnKeepRequestAndResponseUntilResetUserValues(t *testing.T) {
 }
 
 // TestServerErrorHandler tests unexpected cases the for loop will break
-// before request/response reset call. in such cases, call it before
+// before request/response Reset call. in such cases, call it before
 // release to fix #548.
 func TestServerErrorHandler(t *testing.T) {
 	t.Parallel()
@@ -2173,7 +2173,7 @@ func TestServeConnHijackResetUserValues(t *testing.T) {
 	select {
 	case <-ch:
 	case <-time.After(time.Second):
-		t.Errorf("Timeout: UserValues should be reset")
+		t.Errorf("Timeout: UserValues should be Reset")
 	}
 }
 

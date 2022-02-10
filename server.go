@@ -212,14 +212,14 @@ type Server struct {
 
 	// ReadTimeout is the amount of time allowed to read
 	// the full request including body. The connection's read
-	// deadline is reset when the connection opens, or for
+	// deadline is Reset when the connection opens, or for
 	// keep-alive connections after the first byte has been read.
 	//
 	// By default request read timeout is unlimited.
 	ReadTimeout time.Duration
 
 	// WriteTimeout is the maximum duration before timing out
-	// writes of the response. It is reset after the request handler
+	// writes of the response. It is Reset after the request handler
 	// has returned.
 	//
 	// By default response write timeout is unlimited.
@@ -307,12 +307,12 @@ type Server struct {
 	DisablePreParseMultipartForm bool
 
 	// Logs all errors, including the most frequent
-	// 'connection reset by peer', 'broken pipe' and 'connection timeout'
+	// 'connection Reset by peer', 'broken pipe' and 'connection timeout'
 	// errors. Such errors are common in production serving real-world
 	// clients.
 	//
 	// By default the most frequent errors such as
-	// 'connection reset by peer', 'broken pipe' and 'connection timeout'
+	// 'connection Reset by peer', 'broken pipe' and 'connection timeout'
 	// are suppressed in order to limit output log traffic.
 	LogAllErrors bool
 
@@ -748,7 +748,7 @@ func (ctx *RequestCtx) VisitUserValues(visitor func([]byte, interface{})) {
 	}
 }
 
-// ResetUserValues allows to reset user values from Request Context
+// ResetUserValues allows to Reset user values from Request Context
 func (ctx *RequestCtx) ResetUserValues() {
 	ctx.userValues.Reset()
 }
@@ -815,7 +815,7 @@ func (ctx *RequestCtx) Conn() net.Conn {
 	return ctx.c
 }
 
-func (ctx *RequestCtx) reset() {
+func (ctx *RequestCtx) Reset() {
 	ctx.userValues.Reset()
 	ctx.Request.Reset()
 	ctx.Response.Reset()
@@ -1275,7 +1275,7 @@ func addrToIP(addr net.Addr) net.IP {
 // Error sets response status code to the given value and sets response body
 // to the given message.
 //
-// Warning: this will reset the response headers and body already set!
+// Warning: this will Reset the response headers and body already set!
 func (ctx *RequestCtx) Error(msg string, statusCode int) {
 	ctx.Response.Reset()
 	ctx.SetStatusCode(statusCode)
@@ -2903,7 +2903,7 @@ func (s *Server) releaseCtx(ctx *RequestCtx) {
 		panic("BUG: cannot release timed out RequestCtx")
 	}
 
-	ctx.reset()
+	ctx.Reset()
 	s.ctxPool.Put(ctx)
 }
 
