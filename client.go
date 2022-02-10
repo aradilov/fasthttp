@@ -1581,6 +1581,9 @@ func (c *HostClient) doNonNilReqResp(req *Request, resp *Response) (bool, error)
 		return err == nil, err
 	}
 
+	now := time.Now()
+	var readDuration, writeDuration time.Duration
+
 	cc, err := c.acquireConn(req.timeout, req.ConnectionClose())
 	if err != nil {
 		c.setCloseReason(nil, err)
@@ -1633,6 +1636,9 @@ func (c *HostClient) doNonNilReqResp(req *Request, resp *Response) (bool, error)
 	}
 	c.releaseWriter(bw)
 
+	writeDuration = time.Now().Sub(now)
+	now = time.Now()
+
 	if c.ReadTimeout > 0 {
 		// Set Deadline every time, since golang has fixed the performance issue
 		// See https://github.com/golang/go/issues/15133#issuecomment-271571395 for details
@@ -1662,6 +1668,9 @@ func (c *HostClient) doNonNilReqResp(req *Request, resp *Response) (bool, error)
 	}
 	c.releaseReader(br)
 
+	readDuration = time.Now().Sub(now)
+	now = time.Now()
+
 	if resetConnection || req.ConnectionClose() {
 		c.setCloseReason(cc, ConnResetServer)
 		c.setState(cc, StateClosed)
@@ -1673,7 +1682,7 @@ func (c *HostClient) doNonNilReqResp(req *Request, resp *Response) (bool, error)
 
 		c.closeConn(cc)
 	} else {
-		c.setIDLE(cc, 0, 0, 0)
+		c.setIDLE(cc, cc.IdleDuration(), readDuration, writeDuration)
 		c.releaseConn(cc)
 	}
 
