@@ -3014,6 +3014,7 @@ type ConnWriteError struct {
 var (
 	ConnResetClient = errors.New("conn closed by client")
 	ConnResetServer = errors.New("conn closed by server")
+	ConnResetIDLE   = errors.New("conn closed by timeout")
 )
 
 // A ConnState represents the state of a client connection to a server.

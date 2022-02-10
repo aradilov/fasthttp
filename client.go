@@ -1640,6 +1640,8 @@ func (c *HostClient) doNonNilReqResp(req *Request, resp *Response) (bool, error)
 
 	if err != nil {
 		c.setCloseReason(cc, ConnWriteError{err})
+		c.setState(cc, StateClosed)
+
 		c.releaseWriter(bw)
 		c.closeConn(cc)
 		return true, err
@@ -1665,6 +1667,8 @@ func (c *HostClient) doNonNilReqResp(req *Request, resp *Response) (bool, error)
 	br := c.acquireReader(conn)
 	if err = resp.ReadLimitBody(br, c.MaxResponseBodySize); err != nil {
 		c.setCloseReason(cc, ConnReadError{err})
+		c.setState(cc, StateClosed)
+
 		c.releaseReader(br)
 		c.closeConn(cc)
 		// Don't retry in case of ErrBodyTooLarge since we will just get the same again.
@@ -1675,9 +1679,13 @@ func (c *HostClient) doNonNilReqResp(req *Request, resp *Response) (bool, error)
 
 	if resetConnection || req.ConnectionClose() {
 		c.setCloseReason(cc, ConnResetServer)
+		c.setState(cc, StateClosed)
+
 		c.closeConn(cc)
 	} else if resp.ConnectionClose() {
 		c.setCloseReason(cc, ConnResetClient)
+		c.setState(cc, StateClosed)
+
 		c.closeConn(cc)
 	} else {
 		c.setIDLE(cc, 0, 0, 0)
@@ -1901,6 +1909,9 @@ func (c *HostClient) connsCleaner() {
 
 		// Close idle connections.
 		for i, cc := range scratch {
+			c.setCloseReason(cc, ConnResetIDLE)
+			c.setState(cc, StateClosed)
+
 			c.closeConn(cc)
 			scratch[i] = nil
 		}
