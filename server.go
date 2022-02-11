@@ -2796,6 +2796,7 @@ func (ctx *RequestCtx) Init2(conn net.Conn, logger Logger, reduceMemoryUsage boo
 	ctx.s = fakeServer
 	ctx.connRequestNum = 0
 	ctx.connTime = time.Now()
+	ctx.time = ctx.connTime
 
 	keepBodyBuffer := !reduceMemoryUsage
 	ctx.Request.keepBodyBuffer = keepBodyBuffer
