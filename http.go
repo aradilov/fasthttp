@@ -2212,12 +2212,14 @@ func round2(n int) int {
 		return 0
 	}
 
-	x := uint32(n - 1)
+	x := uint64(n - 1)
 	x |= x >> 1
 	x |= x >> 2
 	x |= x >> 4
 	x |= x >> 8
 	x |= x >> 16
+	x |= x >> 32
 
 	return int(x + 1)
 }
+
