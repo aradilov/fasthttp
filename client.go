@@ -1816,7 +1816,7 @@ func (c *HostClient) acquireConn(reqTimeout time.Duration, connectionClose bool)
 		c.decConnsCount()
 		return nil, err
 	}
-	cc = acquireClientConn(conn)
+	cc = AcquireClientConn(conn)
 	c.setState(cc, StateNew)
 
 	return cc, nil
@@ -1840,7 +1840,7 @@ func (c *HostClient) dialConnFor(w *wantConn) {
 		return
 	}
 
-	cc := acquireClientConn(conn)
+	cc := AcquireClientConn(conn)
 	delivered := w.tryDeliver(cc, nil)
 	if !delivered {
 		// not delivered, return idle connection
@@ -1928,7 +1928,7 @@ func (c *HostClient) connsCleaner() {
 func (c *HostClient) closeConn(cc *ClientConn) {
 	c.decConnsCount()
 	cc.c.Close()
-	releaseClientConn(cc)
+	ReleaseClientConn(cc)
 }
 
 func (c *HostClient) decConnsCount() {
@@ -1965,7 +1965,7 @@ func (c *HostClient) ConnsCount() int {
 	return c.connsCount
 }
 
-func acquireClientConn(conn net.Conn) *ClientConn {
+func AcquireClientConn(conn net.Conn) *ClientConn {
 	v := clientConnPool.Get()
 	if v == nil {
 		v = &ClientConn{}
@@ -1978,9 +1978,14 @@ func acquireClientConn(conn net.Conn) *ClientConn {
 	return cc
 }
 
-func releaseClientConn(cc *ClientConn) {
+func ReleaseClientConn(cc *ClientConn) {
 	// Reset all fields.
-	*cc = ClientConn{}
+	cc.c = nil
+	cc.connTime = zeroTime
+	cc.lastUseTime = zeroTime
+	cc.connRequestNum = 0
+	cc.connID = 0
+
 	clientConnPool.Put(cc)
 }
 
