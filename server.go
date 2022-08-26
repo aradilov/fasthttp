@@ -3008,6 +3008,10 @@ type ConnReadError struct {
 	error
 }
 
+func (e ConnReadError) NestedError() error {
+	return e.error
+}
+
 type ConnWriteError struct {
 	error
 }
