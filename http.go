@@ -101,6 +101,14 @@ type Response struct {
 
 	connID         uint64
 	connRequestNum uint64
+
+	redirectsCount int
+}
+
+// GetTimeout returns request timeout, usually set by DoDeadline or DoTimeout
+// Method is available only for sub requests (ip.IsUnspecified() = true)
+func (req *Request) GetTimeout() time.Duration {
+	return req.timeout
 }
 
 // SetHost sets host for the request.
@@ -137,6 +145,11 @@ func (req *Request) RequestURI() []byte {
 		req.SetRequestURIBytes(requestURI)
 	}
 	return req.Header.RequestURI()
+}
+
+// GetRedirectsCount returns amount of redirects while c.Do.
+func (resp *Response) GetRedirectsCount() int {
+	return resp.redirectsCount
 }
 
 // StatusCode returns response status code.
@@ -757,11 +770,6 @@ func (req *Request) copyToSkipBody(dst *Request) {
 
 // CopyTo copies resp contents to dst except of body stream.
 func (resp *Response) CopyTo(dst *Response) {
-	dst.laddr = append(dst.laddr[:0], resp.laddr...)
-	dst.raddr = append(dst.raddr[:0], resp.raddr...)
-	dst.connID = resp.connID
-	dst.connRequestNum = resp.connRequestNum
-
 	resp.copyToSkipBody(dst)
 	if resp.bodyRaw != nil {
 		dst.bodyRaw = resp.bodyRaw
@@ -781,6 +789,9 @@ func (resp *Response) copyToSkipBody(dst *Response) {
 	dst.SkipBody = resp.SkipBody
 	dst.raddr = resp.raddr
 	dst.laddr = resp.laddr
+	dst.redirectsCount = resp.redirectsCount
+	dst.connID = resp.connID
+	dst.connRequestNum = resp.connRequestNum
 }
 
 func swapRequestBody(a, b *Request) {
@@ -1016,6 +1027,7 @@ func (resp *Response) Reset() {
 	resp.connID = 0
 	resp.connRequestNum = 0
 	resp.ImmediateHeaderFlush = false
+	resp.redirectsCount = 0
 }
 
 func (resp *Response) resetSkipHeader() {

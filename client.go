@@ -1105,8 +1105,6 @@ func doRequestFollowRedirectsBuffer(req *Request, dst []byte, url string, c Clie
 }
 
 func DoRequestFollowRedirects(req *Request, resp *Response, url string, maxRedirectsCount int, c ClientDoer) (err error) {
-	redirectsCount := 0
-
 	for {
 		req.SetRequestURI(url)
 		if err = req.parseURI(); err != nil {
@@ -1121,8 +1119,8 @@ func DoRequestFollowRedirects(req *Request, resp *Response, url string, maxRedir
 			break
 		}
 
-		redirectsCount++
-		if redirectsCount > maxRedirectsCount {
+		resp.redirectsCount++
+		if resp.redirectsCount > maxRedirectsCount {
 			err = ErrTooManyRedirects
 			break
 		}
