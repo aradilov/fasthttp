@@ -494,7 +494,7 @@ func TimeoutWithCodeHandler(h RequestHandler, timeout time.Duration, msg string,
 	}
 }
 
-//RequestConfig configure the per request deadline and body limits
+// RequestConfig configure the per request deadline and body limits
 type RequestConfig struct {
 	// ReadTimeout is the maximum duration for reading the entire
 	// request body.
@@ -522,11 +522,11 @@ func CompressHandler(h RequestHandler) RequestHandler {
 //
 // Level is the desired compression level:
 //
-//     * CompressNoCompression
-//     * CompressBestSpeed
-//     * CompressBestCompression
-//     * CompressDefaultCompression
-//     * CompressHuffmanOnly
+//   - CompressNoCompression
+//   - CompressBestSpeed
+//   - CompressBestCompression
+//   - CompressDefaultCompression
+//   - CompressHuffmanOnly
 func CompressHandlerLevel(h RequestHandler, level int) RequestHandler {
 	return func(ctx *RequestCtx) {
 		h(ctx)
@@ -544,18 +544,18 @@ func CompressHandlerLevel(h RequestHandler, level int) RequestHandler {
 //
 // brotliLevel is the desired compression level for brotli.
 //
-//     * CompressBrotliNoCompression
-//     * CompressBrotliBestSpeed
-//     * CompressBrotliBestCompression
-//     * CompressBrotliDefaultCompression
+//   - CompressBrotliNoCompression
+//   - CompressBrotliBestSpeed
+//   - CompressBrotliBestCompression
+//   - CompressBrotliDefaultCompression
 //
 // otherLevel is the desired compression level for gzip and deflate.
 //
-//     * CompressNoCompression
-//     * CompressBestSpeed
-//     * CompressBestCompression
-//     * CompressDefaultCompression
-//     * CompressHuffmanOnly
+//   - CompressNoCompression
+//   - CompressBestSpeed
+//   - CompressBestCompression
+//   - CompressDefaultCompression
+//   - CompressHuffmanOnly
 func CompressHandlerBrotliLevel(h RequestHandler, brotliLevel, otherLevel int) RequestHandler {
 	return func(ctx *RequestCtx) {
 		h(ctx)
@@ -664,8 +664,8 @@ func (ctx *RequestCtx) SetHookAfterWrite(hook AfterWriteCallback) {
 //
 // The server skips calling the handler in the following cases:
 //
-//     * 'Connection: close' header exists in either request or response.
-//     * Unexpected error during response writing to the connection.
+//   - 'Connection: close' header exists in either request or response.
+//   - Unexpected error during response writing to the connection.
 //
 // The server stops processing requests from hijacked connections.
 //
@@ -677,9 +677,8 @@ func (ctx *RequestCtx) SetHookAfterWrite(hook AfterWriteCallback) {
 // Arbitrary 'Connection: Upgrade' protocols may be implemented
 // with HijackHandler. For instance,
 //
-//     * WebSocket ( https://en.wikipedia.org/wiki/WebSocket )
-//     * HTTP/2.0 ( https://en.wikipedia.org/wiki/HTTP/2 )
-//
+//   - WebSocket ( https://en.wikipedia.org/wiki/WebSocket )
+//   - HTTP/2.0 ( https://en.wikipedia.org/wiki/HTTP/2 )
 func (ctx *RequestCtx) Hijack(handler HijackHandler) {
 	ctx.hijackHandler = handler
 }
@@ -1129,15 +1128,15 @@ func SaveMultipartFile(fh *multipart.FileHeader, path string) (err error) {
 //
 // The value is searched in the following places:
 //
-//   * Query string.
-//   * POST or PUT body.
+//   - Query string.
+//   - POST or PUT body.
 //
 // There are more fine-grained methods for obtaining form values:
 //
-//   * QueryArgs for obtaining values from query string.
-//   * PostArgs for obtaining values from POST or PUT body.
-//   * MultipartForm for obtaining values from multipart form.
-//   * FormFile for obtaining uploaded files.
+//   - QueryArgs for obtaining values from query string.
+//   - PostArgs for obtaining values from POST or PUT body.
+//   - MultipartForm for obtaining values from multipart form.
+//   - FormFile for obtaining uploaded files.
 //
 // The returned value is valid until your request handler returns.
 func (ctx *RequestCtx) FormValue(key string) []byte {
@@ -1299,11 +1298,11 @@ func (ctx *RequestCtx) SuccessString(contentType, body string) {
 //
 // statusCode must have one of the following values:
 //
-//    * StatusMovedPermanently (301)
-//    * StatusFound (302)
-//    * StatusSeeOther (303)
-//    * StatusTemporaryRedirect (307)
-//    * StatusPermanentRedirect (308)
+//   - StatusMovedPermanently (301)
+//   - StatusFound (302)
+//   - StatusSeeOther (303)
+//   - StatusTemporaryRedirect (307)
+//   - StatusPermanentRedirect (308)
 //
 // All other statusCode values are replaced by StatusFound (302).
 //
@@ -1311,10 +1310,9 @@ func (ctx *RequestCtx) SuccessString(contentType, body string) {
 // request uri. Fasthttp will always send an absolute uri back to the client.
 // To send a relative uri you can use the following code:
 //
-//   strLocation = []byte("Location") // Put this with your top level var () declarations.
-//   ctx.Response.Header.SetCanonical(strLocation, "/relative?uri")
-//   ctx.Response.SetStatusCode(fasthttp.StatusMovedPermanently)
-//
+//	strLocation = []byte("Location") // Put this with your top level var () declarations.
+//	ctx.Response.Header.SetCanonical(strLocation, "/relative?uri")
+//	ctx.Response.SetStatusCode(fasthttp.StatusMovedPermanently)
 func (ctx *RequestCtx) Redirect(uri string, statusCode int) {
 	u := AcquireURI()
 	ctx.URI().CopyTo(u)
@@ -1328,11 +1326,11 @@ func (ctx *RequestCtx) Redirect(uri string, statusCode int) {
 //
 // statusCode must have one of the following values:
 //
-//    * StatusMovedPermanently (301)
-//    * StatusFound (302)
-//    * StatusSeeOther (303)
-//    * StatusTemporaryRedirect (307)
-//    * StatusPermanentRedirect (308)
+//   - StatusMovedPermanently (301)
+//   - StatusFound (302)
+//   - StatusSeeOther (303)
+//   - StatusTemporaryRedirect (307)
+//   - StatusPermanentRedirect (308)
 //
 // All other statusCode values are replaced by StatusFound (302).
 //
@@ -1340,10 +1338,9 @@ func (ctx *RequestCtx) Redirect(uri string, statusCode int) {
 // request uri. Fasthttp will always send an absolute uri back to the client.
 // To send a relative uri you can use the following code:
 //
-//   strLocation = []byte("Location") // Put this with your top level var () declarations.
-//   ctx.Response.Header.SetCanonical(strLocation, "/relative?uri")
-//   ctx.Response.SetStatusCode(fasthttp.StatusMovedPermanently)
-//
+//	strLocation = []byte("Location") // Put this with your top level var () declarations.
+//	ctx.Response.Header.SetCanonical(strLocation, "/relative?uri")
+//	ctx.Response.SetStatusCode(fasthttp.StatusMovedPermanently)
 func (ctx *RequestCtx) RedirectBytes(uri []byte, statusCode int) {
 	s := b2s(uri)
 	ctx.Redirect(s, statusCode)
@@ -1474,9 +1471,9 @@ func (ctx *RequestCtx) SetBodyStream(bodyStream io.Reader, bodySize int) {
 //
 // This function may be used in the following cases:
 //
-//     * if response body is too big (more than 10MB).
-//     * if response body is streamed from slow external sources.
-//     * if response body must be streamed to the client in chunks.
+//   - if response body is too big (more than 10MB).
+//   - if response body is streamed from slow external sources.
+//   - if response body must be streamed to the client in chunks.
 //     (aka `http server push`).
 func (ctx *RequestCtx) SetBodyStreamWriter(sw StreamWriter) {
 	ctx.Response.SetBodyStreamWriter(sw)
@@ -1973,7 +1970,7 @@ func acceptConn(s *Server, ln net.Listener, lastPerIPErrorTime *time.Time) (net.
 			if pic == nil {
 				if time.Since(*lastPerIPErrorTime) > time.Minute {
 					s.logger().Printf("The number of connections from %s exceeds MaxConnsPerIP=%d",
-						getConnIP4(c), s.MaxConnsPerIP)
+						getConnIP6(c), s.MaxConnsPerIP)
 					*lastPerIPErrorTime = time.Now()
 				}
 				continue
@@ -1985,15 +1982,16 @@ func acceptConn(s *Server, ln net.Listener, lastPerIPErrorTime *time.Time) (net.
 }
 
 func wrapPerIPConn(s *Server, c net.Conn) net.Conn {
-	ip := getUint32IP(c)
-	if ip == 0 {
+	ip := getConnIP6(c)
+	if ip == nil {
 		return c
 	}
 	n := s.perIPConnCounter.Register(ip)
 	if n > s.MaxConnsPerIP {
 		s.perIPConnCounter.Unregister(ip)
 		s.writeFastError(c, StatusTooManyRequests, "The number of connections from your ip exceeds MaxConnsPerIP")
-		c.Close()
+		s.setReject(c.RemoteAddr(), ErrPerIPConnLimit)
+		_ = c.Close()
 		return nil
 	}
 	return acquirePerIPConn(c, ip, &s.perIPConnCounter)

@@ -95,9 +95,9 @@ type Response struct {
 	secureErrorLogMessage bool
 
 	// Remote IP from concurrently net.Conn
-	raddr net.IP
+	raddr net.Addr
 	// Local IP from concurrently net.Conn
-	laddr net.IP
+	laddr net.Addr
 
 	connID         uint64
 	connRequestNum uint64
@@ -321,8 +321,8 @@ func (w *requestBodyWriter) Write(p []byte) (int, error) {
 }
 
 func (resp *Response) parseNetConn(conn net.Conn) {
-	resp.raddr = append(resp.raddr[:0], addrToIP(conn.RemoteAddr())...)
-	resp.laddr = append(resp.laddr[:0], addrToIP(conn.LocalAddr())...)
+	resp.raddr = copyAddr(conn.RemoteAddr())
+	resp.laddr = copyAddr(conn.LocalAddr())
 }
 
 // ConnRequestNum returns request sequence number
@@ -342,12 +342,12 @@ func (resp *Response) ConnID() uint64 {
 }
 
 // RemoteAddr returns the remote network address.
-func (resp *Response) RemoteAddr() net.IP {
+func (resp *Response) RemoteAddr() net.Addr {
 	return resp.raddr
 }
 
 // LocalAddr returns the local network address.
-func (resp *Response) LocalAddr() net.IP {
+func (resp *Response) LocalAddr() net.Addr {
 	return resp.laddr
 }
 
@@ -788,8 +788,8 @@ func (resp *Response) copyToSkipBody(dst *Response) {
 	dst.Reset()
 	resp.Header.CopyTo(&dst.Header)
 	dst.SkipBody = resp.SkipBody
-	dst.raddr = append(dst.raddr[:0], resp.raddr...)
-	dst.laddr = append(dst.laddr[:0], resp.laddr...)
+	dst.raddr = copyAddr(resp.raddr)
+	dst.laddr = copyAddr(resp.laddr)
 	dst.redirectsCount = resp.redirectsCount
 	dst.connID = resp.connID
 	dst.connRequestNum = resp.connRequestNum
@@ -1023,8 +1023,8 @@ func (resp *Response) Reset() {
 	resp.Header.Reset()
 	resp.resetSkipHeader()
 	resp.SkipBody = false
-	resp.raddr = resp.raddr[:0]
-	resp.laddr = resp.laddr[:0]
+	resp.raddr = nil
+	resp.laddr = nil
 	resp.connID = 0
 	resp.connRequestNum = 0
 	resp.ImmediateHeaderFlush = false

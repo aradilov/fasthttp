@@ -1,6 +1,7 @@
 package fasthttp
 
 import (
+	"net"
 	"testing"
 )
 
@@ -25,32 +26,34 @@ func TestPerIPConnCounter(t *testing.T) {
 
 	var cc perIPConnCounter
 
-	expectPanic(t, func() { cc.Unregister(123) })
+	ip := net.ParseIP("127.0.0.1").To16()
+
+	expectPanic(t, func() { cc.Unregister(ip) })
 
 	for i := 1; i < 100; i++ {
-		if n := cc.Register(123); n != i {
+		if n := cc.Register(ip); n != i {
 			t.Fatalf("Unexpected counter value=%d. Expected %d", n, i)
 		}
 	}
 
-	n := cc.Register(456)
+	n := cc.Register(net.IPv4zero)
 	if n != 1 {
 		t.Fatalf("Unexpected counter value=%d. Expected 1", n)
 	}
 
 	for i := 1; i < 100; i++ {
-		cc.Unregister(123)
+		cc.Unregister(ip)
 	}
-	cc.Unregister(456)
+	cc.Unregister(net.IPv4zero)
 
-	expectPanic(t, func() { cc.Unregister(123) })
-	expectPanic(t, func() { cc.Unregister(456) })
+	expectPanic(t, func() { cc.Unregister(ip) })
+	expectPanic(t, func() { cc.Unregister(net.IPv4zero) })
 
-	n = cc.Register(123)
+	n = cc.Register(ip)
 	if n != 1 {
 		t.Fatalf("Unexpected counter value=%d. Expected 1", n)
 	}
-	cc.Unregister(123)
+	cc.Unregister(ip)
 }
 
 func expectPanic(t *testing.T, f func()) {
