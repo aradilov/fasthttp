@@ -78,7 +78,7 @@ func TestNewFastHTTPHandler(t *testing.T) {
 			t.Fatalf("unexpected URL: %#v. Expecting %#v", r.URL, expectedURL)
 		}
 		if r.Context().Value(expectedContextKey) != expectedContextValue {
-			t.Fatalf("unexpected context value for key %q. Expecting %q", expectedContextKey, expectedContextValue)
+			t.Fatalf("unexpected context value for key %q. Expecting %q, got %v", expectedContextKey, expectedContextValue, r.Context().Value(expectedContextKey))
 		}
 
 		for k, expectedV := range expectedHeader {
