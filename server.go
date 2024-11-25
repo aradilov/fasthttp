@@ -388,7 +388,7 @@ type Server struct {
 	// ConnState specifies an optional callback function that is
 	// called when a client connection changes state. See the
 	// ConnState type and associated constants for details.
-	ConnState func(conn net.Conn, state ConnState)
+	ConnState func(conn net.Conn, state ConnState, openConnsPerIP int)
 
 	// ConnReject specifies an optional callback function that is
 	// called when a client connection cannot be established.
@@ -2608,7 +2608,7 @@ func (s *Server) setReject(addr net.Addr, err error) {
 func (s *Server) setState(conn net.Conn, state ConnState, openConnsPerIP int) {
 	s.trackConn(conn, state)
 	if hook := s.ConnState; hook != nil {
-		hook(conn, state)
+		hook(conn, state, openConnsPerIP)
 	}
 }
 

@@ -253,7 +253,7 @@ func TestServerConnState(t *testing.T) {
 	states := make([]string, 0)
 	s := &Server{
 		Handler: func(ctx *RequestCtx) {},
-		ConnState: func(conn net.Conn, state ConnState) {
+		ConnState: func(conn net.Conn, state ConnState, _ int) {
 			states = append(states, state.String())
 		},
 	}
