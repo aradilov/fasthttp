@@ -1857,7 +1857,8 @@ func (s *Server) Serve(ln net.Listener) error {
 	defer atomic.AddInt32(&s.open, -1)
 
 	for {
-		if c, err = acceptConn(s, ln, &lastPerIPErrorTime); err != nil {
+		var openConnsPerIP int
+		if c, openConnsPerIP, err = acceptConn(s, ln, &lastPerIPErrorTime); err != nil {
 			s.setReject(ln.Addr(), err)
 			wp.Stop()
 			if err == io.EOF {
@@ -1865,15 +1866,15 @@ func (s *Server) Serve(ln net.Listener) error {
 			}
 			return err
 		}
-		s.setState(c, StateNew)
+		s.setState(c, StateNew, openConnsPerIP)
 		atomic.AddInt32(&s.open, 1)
 		if !wp.Serve(c) {
 			atomic.AddInt32(&s.open, -1)
 			s.writeFastError(c, StatusServiceUnavailable,
 				"The connection cannot be served because Server.Concurrency limit exceeded")
 			s.setReject(c.RemoteAddr(), ErrConcurrencyLimit)
-			c.Close()
-			s.setState(c, StateClosed)
+			_ = c.Close()
+			s.setState(c, StateClosed, openConnsPerIP)
 			if time.Since(lastOverflowErrorTime) > time.Minute {
 				s.logger().Printf("The incoming connection cannot be served, because %d concurrent connections are served. "+
 					"Try increasing Server.Concurrency", maxWorkersCount)
@@ -1944,7 +1945,8 @@ func (s *Server) Shutdown() error {
 	return nil
 }
 
-func acceptConn(s *Server, ln net.Listener, lastPerIPErrorTime *time.Time) (net.Conn, error) {
+func acceptConn(s *Server, ln net.Listener, lastPerIPErrorTime *time.Time) (net.Conn, int, error) {
+	var openConnsPerIP int
 	for {
 		c, err := ln.Accept()
 		if err != nil {
@@ -1958,15 +1960,15 @@ func acceptConn(s *Server, ln net.Listener, lastPerIPErrorTime *time.Time) (net.
 			}
 			if err != io.EOF && !strings.Contains(err.Error(), "use of closed network connection") {
 				s.logger().Printf("Permanent error when accepting new connections: %s", err)
-				return nil, err
+				return nil, 0, err
 			}
-			return nil, io.EOF
+			return nil, 0, io.EOF
 		}
 		if c == nil {
 			panic("BUG: net.Listener returned (nil, nil)")
 		}
 		if s.MaxConnsPerIP > 0 {
-			pic := wrapPerIPConn(s, c)
+			pic, connections := wrapPerIPConn(s, c)
 			if pic == nil {
 				if time.Since(*lastPerIPErrorTime) > time.Minute {
 					s.logger().Printf("The number of connections from %s exceeds MaxConnsPerIP=%d",
@@ -1976,15 +1978,16 @@ func acceptConn(s *Server, ln net.Listener, lastPerIPErrorTime *time.Time) (net.
 				continue
 			}
 			c = pic
+			openConnsPerIP = connections
 		}
-		return c, nil
+		return c, openConnsPerIP, nil
 	}
 }
 
-func wrapPerIPConn(s *Server, c net.Conn) net.Conn {
+func wrapPerIPConn(s *Server, c net.Conn) (net.Conn, int) {
 	ip := getConnIP6(c)
 	if ip == nil {
-		return c
+		return c, 0
 	}
 	n := s.perIPConnCounter.Register(ip)
 	if n > s.MaxConnsPerIP {
@@ -1992,9 +1995,9 @@ func wrapPerIPConn(s *Server, c net.Conn) net.Conn {
 		s.writeFastError(c, StatusTooManyRequests, "The number of connections from your ip exceeds MaxConnsPerIP")
 		s.setReject(c.RemoteAddr(), ErrPerIPConnLimit)
 		_ = c.Close()
-		return nil
+		return nil, 0
 	}
-	return acquirePerIPConn(c, ip, &s.perIPConnCounter)
+	return acquirePerIPConn(c, ip, &s.perIPConnCounter), n
 }
 
 var defaultLogger = Logger(log.New(os.Stderr, "", log.LstdFlags))
@@ -2027,7 +2030,7 @@ var (
 // ServeConn closes c before returning.
 func (s *Server) ServeConn(c net.Conn) error {
 	if s.MaxConnsPerIP > 0 {
-		pic := wrapPerIPConn(s, c)
+		pic, _ := wrapPerIPConn(s, c)
 		if pic == nil {
 			return ErrPerIPConnLimit
 		}
@@ -2050,13 +2053,13 @@ func (s *Server) ServeConn(c net.Conn) error {
 
 	if err != errHijacked {
 		err1 := c.Close()
-		s.setState(c, StateClosed)
+		s.setState(c, StateClosed, 0)
 		if err == nil {
 			err = err1
 		}
 	} else {
 		err = nil
-		s.setState(c, StateHijacked)
+		s.setState(c, StateHijacked, 0)
 	}
 	return err
 }
@@ -2298,7 +2301,7 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 
 			if err == nil {
 				// If we read any bytes off the wire, we're active.
-				s.setState(c, StateActive)
+				s.setState(c, StateActive, 0)
 			}
 
 			if (s.ReduceMemoryUsage && br.Buffered() == 0) || err != nil {
@@ -2583,7 +2586,7 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 }
 
 func (s *Server) setIDLE(conn net.Conn, id, requests uint64, idle, read, write time.Duration) {
-	s.setState(conn, StateIdle)
+	s.setState(conn, StateIdle, 0)
 
 	if hook := s.ConnIDLE; hook != nil {
 		hook(conn, id, requests, idle, read, write)
@@ -2602,7 +2605,7 @@ func (s *Server) setReject(addr net.Addr, err error) {
 	}
 }
 
-func (s *Server) setState(conn net.Conn, state ConnState) {
+func (s *Server) setState(conn net.Conn, state ConnState, openConnsPerIP int) {
 	s.trackConn(conn, state)
 	if hook := s.ConnState; hook != nil {
 		hook(conn, state)

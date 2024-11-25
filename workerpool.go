@@ -36,7 +36,7 @@ type workerPool struct {
 
 	workerChanPool sync.Pool
 
-	connState func(net.Conn, ConnState)
+	connState func(net.Conn, ConnState, int)
 }
 
 type workerChan struct {
@@ -231,10 +231,10 @@ func (wp *workerPool) workerFunc(ch *workerChan) {
 			}
 		}
 		if err == errHijacked {
-			wp.connState(c, StateHijacked)
+			wp.connState(c, StateHijacked, 0)
 		} else {
 			_ = c.Close()
-			wp.connState(c, StateClosed)
+			wp.connState(c, StateClosed, 0)
 		}
 		c = nil
 
