@@ -2,15 +2,23 @@ package fasthttp
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
+
+var initTimerReset uint64
+
+func GetInitTimerReset() uint64 {
+	return atomic.LoadUint64(&initTimerReset)
+}
 
 func initTimer(t *time.Timer, timeout time.Duration) *time.Timer {
 	if t == nil {
 		return time.NewTimer(timeout)
 	}
 	if t.Reset(timeout) {
-		panic("BUG: active timer trapped into initTimer()")
+		atomic.AddUint64(&initTimerReset, 1)
+		return time.NewTimer(timeout)
 	}
 	return t
 }
