@@ -1569,14 +1569,14 @@ func (s *Server) NextProto(key string, nph ServeHandler) {
 func (s *Server) getNextProto(c net.Conn) (proto string, err error) {
 	if tlsConn, ok := c.(connTLSer); ok {
 		if s.ReadTimeout > 0 {
-			if err := c.SetReadDeadline(time.Now().Add(s.ReadTimeout)); err != nil {
-				panic(fmt.Sprintf("BUG: error in SetReadDeadline(%s): %s", s.ReadTimeout, err))
+			if err = c.SetReadDeadline(time.Now().Add(s.ReadTimeout)); err != nil {
+				return
 			}
 		}
 
 		if s.WriteTimeout > 0 {
-			if err := c.SetWriteDeadline(time.Now().Add(s.WriteTimeout)); err != nil {
-				panic(fmt.Sprintf("BUG: error in SetWriteDeadline(%s): %s", s.WriteTimeout, err))
+			if err = c.SetWriteDeadline(time.Now().Add(s.WriteTimeout)); err != nil {
+				return
 			}
 		}
 
@@ -2133,8 +2133,8 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 		// Remove read or write deadlines that might have previously been set.
 		// The next handler is responsible for setting its own deadlines.
 		if s.ReadTimeout > 0 || s.WriteTimeout > 0 {
-			if err := c.SetDeadline(zeroTime); err != nil {
-				panic(fmt.Sprintf("BUG: error in SetDeadline(zeroTime): %s", err))
+			if err = c.SetDeadline(zeroTime); err != nil {
+				return
 			}
 		}
 
@@ -2189,14 +2189,14 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 		if connRequestNum > 1 {
 
 			if d := s.idleTimeout(); d > 0 {
-				if err := c.SetReadDeadline(time.Now().Add(d)); err != nil {
-					panic(fmt.Sprintf("BUG: error in SetReadDeadline(%s): %s", d, err))
+				if err = c.SetReadDeadline(time.Now().Add(d)); err != nil {
+					return
 				}
 			}
 		} else {
 			if s.ReadTimeout > 0 {
-				if err := c.SetReadDeadline(time.Now().Add(s.ReadTimeout)); err != nil {
-					panic(fmt.Sprintf("BUG: error in SetReadDeadline(%s): %s", s.ReadTimeout, err))
+				if err = c.SetReadDeadline(time.Now().Add(s.ReadTimeout)); err != nil {
+					return
 				}
 			}
 		}
@@ -2239,14 +2239,14 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 
 		if err == nil {
 			if s.ReadTimeout > 0 {
-				if err := c.SetReadDeadline(time.Now().Add(s.ReadTimeout)); err != nil {
-					panic(fmt.Sprintf("BUG: error in SetReadDeadline(%s): %s", s.ReadTimeout, err))
+				if err = c.SetReadDeadline(time.Now().Add(s.ReadTimeout)); err != nil {
+					return
 				}
 			} else if s.IdleTimeout > 0 && connRequestNum > 1 {
 				// If this was an idle connection and the server has an IdleTimeout but
 				// no ReadTimeout then we should remove the ReadTimeout.
-				if err := c.SetReadDeadline(zeroTime); err != nil {
-					panic(fmt.Sprintf("BUG: error in SetReadDeadline(zeroTime): %s", err))
+				if err = c.SetReadDeadline(zeroTime); err != nil {
+					return
 				}
 			}
 			if s.DisableHeaderNamesNormalizing {
@@ -2280,8 +2280,8 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 					reqConf := onHdrRecv(&ctx.Request.Header)
 					if reqConf.ReadTimeout > 0 {
 						deadline := time.Now().Add(reqConf.ReadTimeout)
-						if err := c.SetReadDeadline(deadline); err != nil {
-							panic(fmt.Sprintf("BUG: error in SetReadDeadline(%s): %s", deadline, err))
+						if err = c.SetReadDeadline(deadline); err != nil {
+							return
 						}
 					}
 					if reqConf.MaxRequestBodySize > 0 {
@@ -2445,14 +2445,14 @@ func (s *Server) serveConn(c net.Conn) (err error) {
 		}
 
 		if writeTimeout > 0 {
-			if err := c.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
-				panic(fmt.Sprintf("BUG: error in SetWriteDeadline(%s): %s", writeTimeout, err))
+			if err = c.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+				return
 			}
 			previousWriteTimeout = writeTimeout
 		} else if previousWriteTimeout > 0 {
 			// We don't want a write timeout but we previously set one, remove it.
-			if err := c.SetWriteDeadline(zeroTime); err != nil {
-				panic(fmt.Sprintf("BUG: error in SetWriteDeadline(zeroTime): %s", err))
+			if err = c.SetWriteDeadline(zeroTime); err != nil {
+				return
 			}
 			previousWriteTimeout = 0
 		}
