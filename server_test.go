@@ -1014,6 +1014,98 @@ func TestServerConcurrencyLimit(t *testing.T) {
 	}
 }
 
+func TestServerConcurrencyLimitTLSSilentConn(t *testing.T) {
+	t.Parallel()
+
+	certData, keyData, err := GenerateTestCertificate("localhost")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := tls.X509KeyPair(certData, keyData)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	addr := ln.Addr().String()
+
+	newConns := make(chan struct{}, 16)
+	s := &Server{
+		Handler: func(ctx *RequestCtx) {
+			ctx.WriteString("OK") //nolint:errcheck
+		},
+		Concurrency: 1,
+		Logger:      &testLogger{},
+		ConnState: func(_ net.Conn, state ConnState, _ int) {
+			if state == StateNew {
+				select {
+				case newConns <- struct{}{}:
+				default:
+				}
+			}
+		},
+	}
+	go s.Serve(tls.NewListener(ln, &tls.Config{Certificates: []tls.Certificate{cert}})) //nolint:errcheck
+
+	doRequest := func(timeout time.Duration) (net.Conn, error) {
+		c, err := tls.DialWithDialer(&net.Dialer{Timeout: timeout}, "tcp4", addr, &tls.Config{InsecureSkipVerify: true})
+		if err != nil {
+			return nil, err
+		}
+		c.SetDeadline(time.Now().Add(timeout)) //nolint:errcheck
+		if _, err = c.Write([]byte("GET / HTTP/1.1\r\nHost: aa\r\n\r\n")); err != nil {
+			c.Close()
+			return nil, err
+		}
+		var resp Response
+		if err = resp.Read(bufio.NewReader(c)); err != nil {
+			c.Close()
+			return nil, err
+		}
+		if string(resp.Body()) != "OK" {
+			c.Close()
+			return nil, fmt.Errorf("unexpected body %q", resp.Body())
+		}
+		c.SetDeadline(time.Time{}) //nolint:errcheck
+		return c, nil
+	}
+
+	holder, err := doRequest(time.Second)
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
+	<-newConns
+
+	silent, err := net.Dial("tcp4", addr)
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
+	defer silent.Close()
+	select {
+	case <-newConns:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for the server to accept the silent connection")
+	}
+
+	holder.Close()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		c, err := doRequest(300 * time.Millisecond)
+		if err == nil {
+			c.Close()
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("server stopped accepting TLS connections after a silent connection hit the concurrency limit: %s", err)
+		}
+	}
+}
+
 func TestServerWriteFastError(t *testing.T) {
 	t.Parallel()
 

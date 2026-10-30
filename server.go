@@ -1870,7 +1870,7 @@ func (s *Server) Serve(ln net.Listener) error {
 		atomic.AddInt32(&s.open, 1)
 		if !wp.Serve(c) {
 			atomic.AddInt32(&s.open, -1)
-			s.writeFastError(c, StatusServiceUnavailable,
+			s.writeRejectError(c, StatusServiceUnavailable,
 				"The connection cannot be served because Server.Concurrency limit exceeded")
 			s.setReject(c.RemoteAddr(), ErrConcurrencyLimit)
 			_ = c.Close()
@@ -1992,7 +1992,7 @@ func wrapPerIPConn(s *Server, c net.Conn) (net.Conn, int) {
 	n := s.perIPConnCounter.Register(ip)
 	if n > s.MaxConnsPerIP {
 		s.perIPConnCounter.Unregister(ip)
-		s.writeFastError(c, StatusTooManyRequests, "The number of connections from your ip exceeds MaxConnsPerIP")
+		s.writeRejectError(c, StatusTooManyRequests, "The number of connections from your ip exceeds MaxConnsPerIP")
 		s.setReject(c.RemoteAddr(), ErrPerIPConnLimit)
 		_ = c.Close()
 		return nil, 0
@@ -2040,7 +2040,7 @@ func (s *Server) ServeConn(c net.Conn) error {
 	n := atomic.AddUint32(&s.concurrency, 1)
 	if n > uint32(s.getConcurrency()) {
 		atomic.AddUint32(&s.concurrency, ^uint32(0))
-		s.writeFastError(c, StatusServiceUnavailable, "The connection cannot be served because Server.Concurrency limit exceeded")
+		s.writeRejectError(c, StatusServiceUnavailable, "The connection cannot be served because Server.Concurrency limit exceeded")
 		c.Close()
 		return ErrConcurrencyLimit
 	}
@@ -2922,6 +2922,30 @@ func (s *Server) getServerName() []byte {
 		serverName = v.([]byte)
 	}
 	return serverName
+}
+
+const rejectWriteTimeout = 100 * time.Millisecond
+
+type handshaker interface {
+	Handshake() error
+}
+
+func isTLSConn(c net.Conn) bool {
+	if pic, ok := c.(*perIPConn); ok {
+		c = pic.Conn
+	}
+	_, ok := c.(handshaker)
+	return ok
+}
+
+func (s *Server) writeRejectError(c net.Conn, statusCode int, msg string) {
+	if isTLSConn(c) {
+		return
+	}
+	if err := c.SetDeadline(time.Now().Add(rejectWriteTimeout)); err != nil {
+		return
+	}
+	s.writeFastError(c, statusCode, msg)
 }
 
 func (s *Server) writeFastError(w io.Writer, statusCode int, msg string) {
