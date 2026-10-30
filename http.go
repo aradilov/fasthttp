@@ -600,7 +600,7 @@ func (req *Request) SetBodyRaw(body []byte) {
 // The majority of workloads don't need this method.
 func (resp *Response) ReleaseBody(size int) {
 	resp.bodyRaw = nil
-	if cap(resp.body.B) > size {
+	if resp.body != nil && cap(resp.body.B) > size {
 		resp.closeBodyStream() //nolint:errcheck
 		resp.body = nil
 	}
@@ -615,7 +615,7 @@ func (resp *Response) ReleaseBody(size int) {
 // The majority of workloads don't need this method.
 func (req *Request) ReleaseBody(size int) {
 	req.bodyRaw = nil
-	if cap(req.body.B) > size {
+	if req.body != nil && cap(req.body.B) > size {
 		req.closeBodyStream() //nolint:errcheck
 		req.body = nil
 	}
